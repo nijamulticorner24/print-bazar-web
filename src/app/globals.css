@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 56 100% 50%; /* #FFED00 */
+    --primary-foreground: 222.2 84% 4.9%; /* #0F172A */
+    --secondary: 41 88% 46%; /* #E3A008 */
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 41 88% 46%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 56 100% 50%;
+    --radius: 8px;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-slate-200;
+  }
+  body {
+    font-family: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply bg-white text-slate-900 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    letter-spacing: -0.011em;
+  }
+
+  /* Storefront Marketing Display Headings (scoped or explicit) */
+  .font-display {
+    font-family: var(--font-outfit), 'Outfit', var(--font-inter), sans-serif;
+  }
+
+  /* ERP Root Typography Scope: Pure Inter 14px base, 1.45 line-height */
+  .erp-root {
+    font-family: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .erp-root h1,
+  .erp-root h2,
+  .erp-root h3,
+  .erp-root h4,
+  .erp-root h5,
+  .erp-root h6 {
+    font-family: var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+}
+
+/* Print Industry Refined Utility Styles */
+.bg-brand-yellow {
+  background-color: #FFED00;
+}
+.bg-brand-secondary {
+  background-color: #E3A008;
+}
+.text-brand-dark {
+  color: #0F172A;
+}
+.border-brand-border {
+  border-color: #E2E8F0;
+}
+
+/* Subtle architectural grid pattern */
+.blueprint-grid {
+  background-size: 32px 32px;
+  background-image: linear-gradient(to right, rgba(15, 23, 42, 0.03) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #F8FAFC;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
