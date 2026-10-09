@@ -30,6 +30,10 @@ import {
   RiRefreshLine,
   RiTruckLine,
   RiTimeLine,
+  RiRulerLine,
+  RiLockLine,
+  RiHandCoinLine,
+  RiStore2Line,
 } from 'react-icons/ri';
 import { Button, Badge, Modal } from '@/components/ui';
 
@@ -65,6 +69,8 @@ export interface ProductConfigurationResult {
   referenceImage: FlowReferenceImageState | null;
   hasDesignService: boolean;
   designNotes: string;
+  deliveryMethod: 'COURIER' | 'STORE_PICKUP';
+  paymentMethod: 'ONLINE' | 'COD';
   paymentMode: 'FULL' | 'SPLIT_50';
   advanceAmount: number;
   balanceAmount: number;
@@ -466,6 +472,10 @@ export function ProductConfigurationFlow({
     scrollToStepHeader();
   };
 
+  // Delivery & Payment Method States
+  const [deliveryMethod, setDeliveryMethod] = useState<'COURIER' | 'STORE_PICKUP'>('COURIER');
+  const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'COD'>('ONLINE');
+
   // ---------------------------------------------------------------------------
   // 7. AUTHORITATIVE QUOTE ENGINE
   // ---------------------------------------------------------------------------
@@ -487,6 +497,9 @@ export function ProductConfigurationFlow({
           hasArtwork: effectiveHasArtwork,
           hasDesignService: effectiveHasDesignService,
           hasReferenceImage: effectiveHasReference,
+          deliveryMethod,
+          paymentMethod,
+          isCod: paymentMethod === 'COD',
         });
         if (isCurrent) {
           setQuote(q);
@@ -515,6 +528,8 @@ export function ProductConfigurationFlow({
     effectiveHasArtwork,
     effectiveHasDesignService,
     effectiveHasReference,
+    deliveryMethod,
+    paymentMethod,
   ]);
 
   // Field change handler
@@ -659,9 +674,19 @@ export function ProductConfigurationFlow({
     return Number(quote?.totalTax || Math.round(computedSubtotal * 0.18 * 100) / 100);
   }, [quote?.totalTax, computedSubtotal]);
 
+  const computedShipping = useMemo(() => {
+    if (deliveryMethod === 'STORE_PICKUP') return 0;
+    return Number(quote?.shippingAmount ?? quote?.estimatedShipping ?? 0);
+  }, [deliveryMethod, quote?.shippingAmount, quote?.estimatedShipping]);
+
+  const computedCodCharge = useMemo(() => {
+    if (paymentMethod !== 'COD') return 0;
+    return Number(quote?.codCharge ?? 0);
+  }, [paymentMethod, quote?.codCharge]);
+
   const computedGrandTotal = useMemo(() => {
-    return Number(quote?.grandTotal || Math.round((computedSubtotal + computedTax) * 100) / 100);
-  }, [quote?.grandTotal, computedSubtotal, computedTax]);
+    return Number(quote?.grandTotal || Math.round((computedSubtotal + computedTax + computedShipping + computedCodCharge) * 100) / 100);
+  }, [quote?.grandTotal, computedSubtotal, computedTax, computedShipping, computedCodCharge]);
 
   const computedAdvanceAmount = useMemo(() => {
     if (paymentMode === 'SPLIT_50') {
@@ -689,6 +714,8 @@ export function ProductConfigurationFlow({
       referenceImage: effectiveHasReference ? referenceImage : null,
       hasDesignService: effectiveHasDesignService,
       designNotes,
+      deliveryMethod,
+      paymentMethod,
       paymentMode,
       advanceAmount: computedAdvanceAmount,
       balanceAmount: computedBalanceAmount,
@@ -698,7 +725,12 @@ export function ProductConfigurationFlow({
         ...(quote || {}),
         subtotal: computedSubtotal,
         totalTax: computedTax,
+        estimatedShipping: computedShipping,
+        shippingAmount: computedShipping,
+        codCharge: computedCodCharge,
         grandTotal: computedGrandTotal,
+        deliveryMethod,
+        paymentMethod,
         paymentMode,
         advanceAmount: computedAdvanceAmount,
         balanceAmount: computedBalanceAmount,
@@ -846,6 +878,33 @@ export function ProductConfigurationFlow({
           </div>
 
           <div className="space-y-6">
+            {/* Standard Factory Finished Dimensions (Fixed Specification) */}
+            {product.defaultSize && (
+              <div className="p-4 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-9 w-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center flex-shrink-0 font-bold border border-amber-200/60 shadow-2xs">
+                    <RiRulerLine className="h-4 w-4 text-[#E3A008]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                        Standard Finished Dimensions
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold bg-slate-200/90 text-slate-700 px-1.5 py-0.5 rounded border border-slate-300">
+                        <RiLockLine className="h-2.5 w-2.5" /> Fixed Standard
+                      </span>
+                    </div>
+                    <div className="font-bold text-slate-900 text-xs sm:text-sm mt-0.5 font-sans">
+                      {product.defaultSize}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-slate-400 hidden sm:inline-block flex-shrink-0">
+                  Precision Factory Size
+                </span>
+              </div>
+            )}
+
             {visibleFields.map((field) => (
               <div key={field.id} className="pb-5 border-b border-slate-100 last:border-0 last:pb-0">
                 <DynamicFieldRenderer
@@ -907,17 +966,52 @@ export function ProductConfigurationFlow({
                 const isSelected = quantity === preset;
                 const estimatedBatchPrice = Number(product.basePrice || 1) * preset;
 
+                // Check for matched offer tier for this preset
+                let presetOfferDisc = 0;
+                let presetOfferLabel = '';
+                if (quote?.availableOffers && Array.isArray(quote.availableOffers)) {
+                  const matched = quote.availableOffers.find(
+                    (o: any) => preset >= o.minQty && (o.maxQty === null || o.maxQty === undefined || preset <= o.maxQty)
+                  );
+                  if (matched && matched.discountPercent > 0) {
+                    presetOfferDisc = matched.discountPercent;
+                    presetOfferLabel = matched.label || `${matched.discountPercent}% OFF`;
+                  }
+                } else if (product.pricingMatrices && Array.isArray(product.pricingMatrices)) {
+                  const matched = product.pricingMatrices.find(
+                    (m: any) => preset >= m.minQty && (m.maxQty === null || m.maxQty === undefined || preset <= m.maxQty)
+                  );
+                  if (matched) {
+                    const combo = (matched.attributeCombination as any) || {};
+                    const disc = matched.discountPercent ?? combo.discountPercent ?? 0;
+                    if (disc > 0) {
+                      presetOfferDisc = disc;
+                      presetOfferLabel = matched.label || combo.label || `${disc}% OFF`;
+                    }
+                  }
+                }
+
                 return (
                   <button
                     key={preset}
                     type="button"
                     onClick={() => setQuantity(preset)}
-                    className={`py-3.5 px-4 rounded-xl text-center border transition-all duration-150 cursor-pointer ${
+                    className={`relative py-3.5 px-4 rounded-xl text-center border transition-all duration-150 cursor-pointer ${
                       isSelected
                         ? 'border-slate-900 bg-slate-900 text-white shadow-md ring-2 ring-slate-900'
                         : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50'
                     }`}
                   >
+                    {presetOfferDisc > 0 && (
+                      <span className={`absolute -top-2.5 right-2 px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider shadow-2xs border ${
+                        isSelected
+                          ? 'bg-[#FFED00] text-slate-950 border-amber-300'
+                          : 'bg-emerald-600 text-white border-emerald-700'
+                      }`}>
+                        {presetOfferDisc}% OFF
+                      </span>
+                    )}
+
                     <div className="flex items-center justify-center gap-1">
                       <span className={`text-base sm:text-lg font-mono font-black ${isSelected ? 'text-[#FFED00]' : 'text-slate-950'}`}>
                         {preset.toLocaleString()}
@@ -934,6 +1028,32 @@ export function ProductConfigurationFlow({
                 );
               })}
             </div>
+
+            {/* Auto-Applied Offer Notification Banner */}
+            {quote?.appliedOffer && (quote.appliedOffer.discountPercent > 0 || quote.appliedOffer.savingsAmount > 0) && (
+              <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-emerald-50 to-amber-500/10 border border-emerald-300 rounded-2xl flex items-center justify-between gap-3 text-emerald-950 shadow-xs animate-in fade-in">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-base flex-shrink-0 shadow-xs">
+                    🎉
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-emerald-950 flex items-center gap-2 flex-wrap">
+                      <span>Volume Offer Auto-Applied:</span>
+                      <span className="bg-emerald-600 text-white text-[10px] font-mono font-black px-2 py-0.5 rounded-md">
+                        {quote.appliedOffer.discountPercent}% OFF
+                      </span>
+                      <span className="text-slate-700 font-normal">({quote.appliedOffer.offerName})</span>
+                    </div>
+                    <div className="text-[11px] text-emerald-800 mt-0.5">
+                      You are automatically saving <strong className="text-emerald-950 font-mono font-black">{formatCurrency(quote.appliedOffer.savingsAmount)}</strong> on this order volume!
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono font-black uppercase text-emerald-900 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-md hidden sm:inline-block">
+                  AUTO-APPLIED
+                </span>
+              </div>
+            )}
 
             {/* Live Calculated Price Preview Card */}
             <div className="p-4 bg-amber-50/60 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-3 animate-in fade-in">
@@ -1845,15 +1965,44 @@ export function ProductConfigurationFlow({
                 );
               })()}
 
+              {/* Standard Dimensions (Read-Only) */}
+              {product.defaultSize && (
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase">
+                        Product Dimensions
+                      </span>
+                      <span className="text-[9px] font-mono font-bold text-slate-500 bg-slate-200/90 px-1.5 py-0.2 rounded">
+                        Standard
+                      </span>
+                    </div>
+                    <span className="font-bold text-slate-900 text-xs sm:text-sm truncate block font-sans">
+                      {product.defaultSize}
+                    </span>
+                  </div>
+                  <div className="text-slate-400 p-1 flex-shrink-0" title="Fixed Standard Specification (Non-editable)">
+                    <RiLockLine className="h-4 w-4 text-slate-400" />
+                  </div>
+                </div>
+              )}
+
               {/* Quantity */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-mono font-bold text-slate-400 block uppercase">
                     Quantity
                   </span>
-                  <span className="font-bold text-slate-900 text-xs sm:text-sm">
-                    {quantity.toLocaleString()} pcs
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                      {quantity.toLocaleString()} pcs
+                    </span>
+                    {(quote?.appliedOffer?.discountPercent > 0 || quote?.discountPercent > 0) && (
+                      <span className="inline-flex items-center text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300/60">
+                        🎉 {quote?.appliedOffer?.discountPercent || quote?.discountPercent}% OFF
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1991,17 +2140,19 @@ export function ProductConfigurationFlow({
             {/* Price Rows */}
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between text-slate-600">
-                <span>Base Unit Rate ({quantity} pcs)</span>
+                <span>
+                  Base Unit Rate ({quantity.toLocaleString()} pcs @ ₹{Number(quote?.originalBasePrice || product.basePrice || 0).toFixed(2)}/pc)
+                </span>
                 <span className="font-mono font-bold text-slate-900">
-                  {formatCurrency(Number(quote?.baseSubtotal || product.basePrice || 0))}
+                  {formatCurrency(Number(quote?.baseSubtotal || (Number(product.basePrice || 0) * quantity) || 0))}
                 </span>
               </div>
 
-              {quote?.dynamicModifiersTotal > 0 && (
+              {Number(quote?.dynamicModifiersTotal || quote?.optionsCost || 0) > 0 && (
                 <div className="flex justify-between text-slate-600">
                   <span>Selected Specification Upgrades</span>
                   <span className="font-mono font-bold text-slate-900">
-                    +{formatCurrency(Number(quote.dynamicModifiersTotal))}
+                    +{formatCurrency(Number(quote?.dynamicModifiersTotal || quote?.optionsCost || 0))}
                   </span>
                 </div>
               )}
@@ -2027,6 +2178,26 @@ export function ProductConfigurationFlow({
                 </div>
               )}
 
+              {/* Volume Discount / Offer Savings Line Item */}
+              {(Number(quote?.appliedOffer?.savingsAmount || quote?.discountAmount || 0) > 0 || Number(quote?.appliedOffer?.discountPercent || quote?.discountPercent || 0) > 0) && (
+                <div className="flex justify-between items-center text-emerald-900 font-bold bg-emerald-50/90 p-2.5 rounded-xl border border-emerald-300/80 shadow-2xs animate-in fade-in">
+                  <div className="flex items-center gap-2 min-w-0 pr-2">
+                    <span className="text-base flex-shrink-0">🎉</span>
+                    <div className="truncate">
+                      <div className="text-xs font-bold text-emerald-950 truncate">
+                        {quote?.appliedOffer?.offerName || `Volume Offer (${quote?.appliedOffer?.discountPercent || quote?.discountPercent}% OFF)`}
+                      </div>
+                      <div className="text-[10px] text-emerald-700 font-medium">
+                        Instant Auto-Applied Savings
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-mono text-sm font-black text-emerald-700 flex-shrink-0">
+                    -{formatCurrency(Number(quote?.appliedOffer?.savingsAmount || quote?.discountAmount || 0))}
+                  </span>
+                </div>
+              )}
+
               <div className="pt-2 border-t border-slate-100 flex justify-between text-slate-600">
                 <span>Pre-tax Subtotal</span>
                 <span className="font-mono font-bold text-slate-900">
@@ -2041,18 +2212,228 @@ export function ProductConfigurationFlow({
                 </span>
               </div>
 
+              {/* Courier Delivery Fee Line Item */}
+              <div className="flex justify-between items-center text-slate-600">
+                <div className="flex items-center gap-1.5">
+                  <RiTruckLine className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>
+                    {deliveryMethod === 'STORE_PICKUP' ? 'Store Hub Pickup' : 'Doorstep Courier Delivery'}
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-slate-900">
+                  {deliveryMethod === 'STORE_PICKUP' ? (
+                    <span className="text-emerald-700 font-bold">FREE (Self Pickup)</span>
+                  ) : computedShipping === 0 ? (
+                    <span className="text-emerald-700 font-bold">FREE (Eligible)</span>
+                  ) : (
+                    `+${formatCurrency(computedShipping)}`
+                  )}
+                </span>
+              </div>
+
+              {/* COD Handling Fee Line Item */}
+              {paymentMethod === 'COD' && computedCodCharge > 0 && (
+                <div className="flex justify-between items-center text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200">
+                  <div className="flex items-center gap-1.5">
+                    <RiHandCoinLine className="h-3.5 w-3.5 text-amber-700" />
+                    <span className="text-xs font-bold">Cash on Delivery (COD) Surcharge</span>
+                  </div>
+                  <span className="font-mono font-bold text-amber-950">
+                    +{formatCurrency(computedCodCharge)}
+                  </span>
+                </div>
+              )}
+
               <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline">
                 <div>
                   <span className="text-xs font-black uppercase tracking-wider text-slate-900 block">
-                    Total Order Value (Incl. Taxes)
+                    Total Order Value (Incl. Taxes & Delivery)
                   </span>
                   <span className="text-[10px] text-slate-400 font-mono">
                     {quote?.unitPrice ? `₹${Number(quote.unitPrice).toFixed(2)} / unit (pre-tax)` : ''}
                   </span>
                 </div>
-                <span className="text-2xl sm:text-3xl font-black text-slate-900 font-display">
-                  {formatCurrency(computedGrandTotal)}
-                </span>
+                <div className="text-right">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 font-display block">
+                    {formatCurrency(computedGrandTotal)}
+                  </span>
+                  {Number(quote?.appliedOffer?.savingsAmount || quote?.discountAmount || 0) > 0 && (
+                    <span className="text-[11px] font-mono font-bold text-emerald-700">
+                      Total Savings: {formatCurrency(Number(quote?.appliedOffer?.savingsAmount || quote?.discountAmount || 0))}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Clickable Delivery Method Selection */}
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <div>
+                <label className="text-xs font-black uppercase tracking-wider text-slate-900 block">
+                  Select Delivery Fulfillment
+                </label>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Choose doorstep courier dispatch or free in-person collection.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Courier Delivery Option */}
+                <button
+                  type="button"
+                  onClick={() => setDeliveryMethod('COURIER')}
+                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                    deliveryMethod === 'COURIER'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1.5 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                          deliveryMethod === 'COURIER'
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {deliveryMethod === 'COURIER' && <RiCheckLine className="h-3 w-3 stroke-[3]" />}
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">Doorstep Courier</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-indigo-800 bg-indigo-100 px-2 py-0.5 rounded">
+                      {computedShipping === 0 ? 'FREE' : formatCurrency(computedShipping)}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Direct insured courier shipping to your address
+                  </div>
+                </button>
+
+                {/* Store Pickup Option */}
+                <button
+                  type="button"
+                  onClick={() => setDeliveryMethod('STORE_PICKUP')}
+                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                    deliveryMethod === 'STORE_PICKUP'
+                      ? 'border-indigo-600 bg-indigo-50/40 ring-1.5 ring-indigo-600 shadow-xs'
+                      : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                          deliveryMethod === 'STORE_PICKUP'
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {deliveryMethod === 'STORE_PICKUP' && <RiCheckLine className="h-3 w-3 stroke-[3]" />}
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">Self Store Pickup</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                      FREE
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Collect directly from central print hub facility
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Clickable Payment Method Selection (Prepaid Online vs COD) */}
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <div>
+                <label className="text-xs font-black uppercase tracking-wider text-slate-900 block">
+                  Select Payment Method
+                </label>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Choose instant online prepaid checkout or Cash on Delivery (COD).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Prepaid Online */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('ONLINE')}
+                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                    paymentMethod === 'ONLINE'
+                      ? 'border-slate-900 bg-amber-50/40 ring-1.5 ring-slate-900 shadow-xs'
+                      : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                          paymentMethod === 'ONLINE'
+                            ? 'border-slate-900 bg-slate-900 text-[#FFED00]'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {paymentMethod === 'ONLINE' && <RiCheckLine className="h-3 w-3 stroke-[3]" />}
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">Online Prepaid</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                      ₹0 Surcharge
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Instant UPI, Credit/Debit Cards, Net Banking, EMI
+                  </div>
+                </button>
+
+                {/* Cash on Delivery (COD) */}
+                <button
+                  type="button"
+                  disabled={product.allowCod === false}
+                  onClick={() => {
+                    if (product.allowCod !== false) {
+                      setPaymentMethod('COD');
+                    }
+                  }}
+                  className={`p-4 rounded-xl border text-left transition-all ${
+                    product.allowCod === false
+                      ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200'
+                      : paymentMethod === 'COD'
+                      ? 'border-emerald-600 bg-emerald-50/40 ring-1.5 ring-emerald-600 shadow-xs cursor-pointer'
+                      : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 cursor-pointer'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                          paymentMethod === 'COD'
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {paymentMethod === 'COD' && <RiCheckLine className="h-3 w-3 stroke-[3]" />}
+                      </div>
+                      <span className="text-xs font-bold text-slate-900">Cash on Delivery (COD)</span>
+                    </div>
+                    {product.allowCod === false ? (
+                      <span className="text-[10px] font-mono font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded">
+                        Unavailable
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                        {computedCodCharge > 0 ? `+${formatCurrency(computedCodCharge)} Fee` : '₹0 Surcharge'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {product.allowCod === false
+                      ? 'COD is not supported for this custom print item'
+                      : 'Pay remaining balance upon doorstep delivery'}
+                  </div>
+                </button>
               </div>
             </div>
 

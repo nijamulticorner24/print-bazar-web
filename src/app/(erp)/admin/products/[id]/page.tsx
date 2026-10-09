@@ -25,6 +25,8 @@ import {
   RiFileLine,
   RiLinkM,
   RiImageAddLine,
+  RiLockLine,
+  RiRulerLine,
 } from 'react-icons/ri';
 import { formatCurrency, getEstimatedDeliveryText } from '@/lib/utils';
 import {
@@ -35,10 +37,22 @@ import {
   DynamicFieldOption,
   ProductImageItem,
   ProductOptionRequirement,
+  PricingRule,
+  CreatePricingRuleDto,
   resolveImageUrl,
 } from '@/lib/api';
 import { DynamicFieldRenderer } from '@/components/configurator/DynamicFieldRenderer';
 import { ProductConfigurationFlow } from '@/components/configurator/ProductConfigurationFlow';
+import {
+  RiPercentLine,
+  RiCoupon3Line,
+  RiArrowUpDownLine,
+  RiMoneyDollarCircleLine,
+  RiDiscountPercentLine,
+  RiTruckLine,
+  RiHandCoinLine,
+  RiShieldCheckLine,
+} from 'react-icons/ri';
 
 export default function AdminProductEditorPage() {
   const params = useParams();
@@ -68,6 +82,13 @@ export default function AdminProductEditorPage() {
   const [productionDays, setProductionDays] = useState<number>(2);
   const [trackInventory, setTrackInventory] = useState(false);
   const [stockQuantity, setStockQuantity] = useState(0);
+  const [defaultSize, setDefaultSize] = useState('');
+
+  // Fulfillment & Payment Surcharges (Admin-Controlled Delivery & COD)
+  const [courierCharge, setCourierCharge] = useState<number>(100);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState<number>(1000);
+  const [allowCod, setAllowCod] = useState<boolean>(true);
+  const [codSurcharge, setCodSurcharge] = useState<number>(50);
 
   // Dynamic Product Flow Engine Configuration (Admin-Controlled)
   const [artworkRequirement, setArtworkRequirement] = useState<ProductOptionRequirement>('OPTIONAL');
@@ -110,6 +131,20 @@ export default function AdminProductEditorPage() {
   const [newOptionValue, setNewOptionValue] = useState('');
   const [newOptionPrice, setNewOptionPrice] = useState<number>(0);
 
+  // Form State: Pricing Rules (Tab 5: Volume Offers & Tier Engine)
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [isLoadingRules, setIsLoadingRules] = useState<boolean>(false);
+  const [isSavingRule, setIsSavingRule] = useState<boolean>(false);
+  const [isDeletingRuleId, setIsDeletingRuleId] = useState<string | null>(null);
+  const [isRuleModalOpen, setIsRuleModalOpen] = useState<boolean>(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [ruleMinQty, setRuleMinQty] = useState<number>(500);
+  const [ruleMaxQty, setRuleMaxQty] = useState<string>('');
+  const [ruleDiscountPercent, setRuleDiscountPercent] = useState<number>(10);
+  const [ruleUnitPrice, setRuleUnitPrice] = useState<number>(0);
+  const [ruleLabel, setRuleLabel] = useState<string>('');
+  const [testSimQty, setTestSimQty] = useState<number>(1000);
+
   // Preview State
   const [previewValues, setPreviewValues] = useState<Record<string, any>>({});
   const [previewQuantity, setPreviewQuantity] = useState<number>(100);
@@ -118,12 +153,14 @@ export default function AdminProductEditorPage() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [prod, cats] = await Promise.all([
+      const [prod, cats, rules] = await Promise.all([
         api.adminGetProductById(productId),
         api.adminListCategories(),
+        api.adminGetPricingRules(productId).catch(() => [] as PricingRule[]),
       ]);
       setProduct(prod);
       setCategories(cats);
+      setPricingRules(Array.isArray(rules) ? rules : []);
 
       // Populate form
       setName(prod.name);
@@ -138,6 +175,7 @@ export default function AdminProductEditorPage() {
       setProductionDays(prod.productionDays);
       setTrackInventory(prod.trackInventory);
       setStockQuantity(prod.stockQuantity);
+      setDefaultSize(prod.defaultSize || '');
 
       // Populate Dynamic Flow Engine fields
       setArtworkRequirement(prod.artworkRequirement || 'OPTIONAL');
@@ -147,6 +185,12 @@ export default function AdminProductEditorPage() {
       setReferenceImageRequirement(prod.referenceImageRequirement || 'DISABLED');
       setDesignServiceRequirement(prod.designServiceRequirement || 'DISABLED');
       setDesignServicePrice(Number(prod.designServicePrice) || 0);
+
+      // Populate Fulfillment & COD Surcharge fields
+      setCourierCharge(prod.courierCharge !== null && prod.courierCharge !== undefined ? Number(prod.courierCharge) : 100);
+      setFreeShippingThreshold(prod.freeShippingThreshold !== null && prod.freeShippingThreshold !== undefined ? Number(prod.freeShippingThreshold) : 1000);
+      setAllowCod(prod.allowCod ?? true);
+      setCodSurcharge(prod.codSurcharge !== null && prod.codSurcharge !== undefined ? Number(prod.codSurcharge) : 50);
 
       // Initialize preview values
       const initialPrev: Record<string, any> = {};
@@ -191,6 +235,7 @@ export default function AdminProductEditorPage() {
         minQuantity: Number(minQuantity),
         maxQuantity: Number(maxQuantity),
         productionDays: Number(productionDays),
+        defaultSize: defaultSize.trim() || null,
         trackInventory,
         stockQuantity: Number(stockQuantity),
         artworkRequirement,
@@ -200,6 +245,10 @@ export default function AdminProductEditorPage() {
         referenceImageRequirement,
         designServiceRequirement,
         designServicePrice: Number(designServicePrice),
+        courierCharge: Number(courierCharge),
+        freeShippingThreshold: Number(freeShippingThreshold),
+        allowCod: Boolean(allowCod),
+        codSurcharge: Number(codSurcharge),
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -408,6 +457,205 @@ export default function AdminProductEditorPage() {
     }
   };
 
+  // Open Add Rule Modal
+  const handleOpenAddRuleModal = () => {
+    setEditingRuleId(null);
+    setRuleMinQty(500);
+    setRuleMaxQty('');
+    setRuleDiscountPercent(10);
+    const calculatedUnit = Number(basePrice) > 0 ? Math.round(Number(basePrice) * 0.9 * 100) / 100 : 0;
+    setRuleUnitPrice(calculatedUnit);
+    setRuleLabel('10% OFF Bulk Tier');
+    setIsRuleModalOpen(true);
+  };
+
+  // Open Edit Rule Modal
+  const handleOpenEditRuleModal = (rule: PricingRule) => {
+    setEditingRuleId(rule.id);
+    setRuleMinQty(rule.minQty);
+    setRuleMaxQty(rule.maxQty !== null && rule.maxQty !== undefined && rule.maxQty < 999999 ? String(rule.maxQty) : '');
+    
+    const combo = (rule.attributeCombination as any) || {};
+    let disc = rule.discountPercent ?? combo.discountPercent ?? 0;
+    if (!disc && Number(rule.unitPrice) < Number(basePrice) && Number(basePrice) > 0) {
+      disc = Math.round(((Number(basePrice) - Number(rule.unitPrice)) / Number(basePrice)) * 100);
+    }
+    setRuleDiscountPercent(disc);
+    setRuleUnitPrice(Number(rule.unitPrice));
+    setRuleLabel(rule.label || combo.label || '');
+    setIsRuleModalOpen(true);
+  };
+
+  // Sync Discount % -> Unit Price
+  const handleDiscountPercentChange = (percent: number) => {
+    setRuleDiscountPercent(percent);
+    if (Number(basePrice) > 0) {
+      const calculatedUnit = Math.max(0, Math.round(Number(basePrice) * (1 - percent / 100) * 100) / 100);
+      setRuleUnitPrice(calculatedUnit);
+    }
+  };
+
+  // Sync Unit Price -> Discount %
+  const handleUnitPriceChange = (unitPrice: number) => {
+    setRuleUnitPrice(unitPrice);
+    if (Number(basePrice) > 0 && unitPrice < Number(basePrice)) {
+      const calculatedDiscount = Math.round(((Number(basePrice) - unitPrice) / Number(basePrice)) * 100);
+      setRuleDiscountPercent(calculatedDiscount);
+    }
+  };
+
+  // Save Pricing Rule
+  const handleSaveRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (ruleMinQty < 1) {
+      alert('Minimum quantity must be at least 1.');
+      return;
+    }
+    const maxQtyNum = ruleMaxQty ? Number(ruleMaxQty) : null;
+    if (maxQtyNum && maxQtyNum < ruleMinQty) {
+      alert('Maximum quantity cannot be less than minimum quantity.');
+      return;
+    }
+
+    setIsSavingRule(true);
+    try {
+      const payload: CreatePricingRuleDto = {
+        minQty: Number(ruleMinQty),
+        maxQty: maxQtyNum,
+        discountPercent: Number(ruleDiscountPercent),
+        unitPrice: Number(ruleUnitPrice),
+        label: ruleLabel.trim() || `${ruleDiscountPercent}% OFF (${ruleMinQty.toLocaleString()}+ units)`,
+        attributeCombination: {
+          discountPercent: Number(ruleDiscountPercent),
+          label: ruleLabel.trim() || `${ruleDiscountPercent}% OFF`,
+        },
+      };
+
+      if (editingRuleId) {
+        await api.adminUpdatePricingRule(productId, editingRuleId, payload);
+      } else {
+        await api.adminAddPricingRule(productId, payload);
+      }
+
+      setIsRuleModalOpen(false);
+      const updatedRules = await api.adminGetPricingRules(productId);
+      setPricingRules(updatedRules);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save pricing rule');
+    } finally {
+      setIsSavingRule(false);
+    }
+  };
+
+  // Delete Pricing Rule
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!confirm('Are you sure you want to delete this pricing rule tier?')) return;
+    setIsDeletingRuleId(ruleId);
+    try {
+      await api.adminDeletePricingRule(productId, ruleId);
+      const updatedRules = await api.adminGetPricingRules(productId);
+      setPricingRules(updatedRules);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete pricing rule');
+    } finally {
+      setIsDeletingRuleId(null);
+    }
+  };
+
+  // Apply Quick Preset Tiers
+  const handleApplyPresetRules = async (presetType: 'STANDARD' | 'WHOLESALE') => {
+    if (pricingRules.length > 0) {
+      if (!confirm('This will replace your existing pricing rules with preset volume tiers. Continue?')) {
+        return;
+      }
+    }
+
+    setIsLoadingRules(true);
+    try {
+      const base = Number(basePrice) > 0 ? Number(basePrice) : 10;
+      let presets: CreatePricingRuleDto[] = [];
+
+      if (presetType === 'STANDARD') {
+        presets = [
+          {
+            minQty: 500,
+            maxQty: 999,
+            discountPercent: 5,
+            unitPrice: Math.round(base * 0.95 * 100) / 100,
+            label: '5% OFF Standard Bulk (500–999)',
+          },
+          {
+            minQty: 1000,
+            maxQty: 2499,
+            discountPercent: 10,
+            unitPrice: Math.round(base * 0.90 * 100) / 100,
+            label: '10% OFF Pro Run (1,000–2,499)',
+          },
+          {
+            minQty: 2500,
+            maxQty: 4999,
+            discountPercent: 15,
+            unitPrice: Math.round(base * 0.85 * 100) / 100,
+            label: '15% OFF Enterprise Volume (2,500–4,999)',
+          },
+          {
+            minQty: 5000,
+            maxQty: null,
+            discountPercent: 20,
+            unitPrice: Math.round(base * 0.80 * 100) / 100,
+            label: '20% OFF Mega Production (5,000+)',
+          },
+        ];
+      } else {
+        presets = [
+          {
+            minQty: 250,
+            maxQty: 499,
+            discountPercent: 5,
+            unitPrice: Math.round(base * 0.95 * 100) / 100,
+            label: '5% OFF Starter Commercial (250–499)',
+          },
+          {
+            minQty: 500,
+            maxQty: 999,
+            discountPercent: 12,
+            unitPrice: Math.round(base * 0.88 * 100) / 100,
+            label: '12% OFF Commercial Saver (500–999)',
+          },
+          {
+            minQty: 1000,
+            maxQty: 2499,
+            discountPercent: 20,
+            unitPrice: Math.round(base * 0.80 * 100) / 100,
+            label: '20% OFF Master Wholesale (1,000–2,499)',
+          },
+          {
+            minQty: 2500,
+            maxQty: 4999,
+            discountPercent: 28,
+            unitPrice: Math.round(base * 0.72 * 100) / 100,
+            label: '28% OFF Industrial Fleet (2,500–4,999)',
+          },
+          {
+            minQty: 5000,
+            maxQty: null,
+            discountPercent: 35,
+            unitPrice: Math.round(base * 0.65 * 100) / 100,
+            label: '35% OFF Maximum Plant Wholesale (5,000+)',
+          },
+        ];
+      }
+
+      await api.adminSaveBatchPricingRules(productId, presets);
+      const updatedRules = await api.adminGetPricingRules(productId);
+      setPricingRules(updatedRules);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to apply preset rules');
+    } finally {
+      setIsLoadingRules(false);
+    }
+  };
+
   // Preview quote recalculation
   useEffect(() => {
     if (activeTab === 'PREVIEW' && product) {
@@ -510,7 +758,7 @@ export default function AdminProductEditorPage() {
           { id: 'MEDIA', label: `2. Media Gallery (${product.images?.length || 0})` },
           { id: 'FIELDS', label: `3. Dynamic Fields (${product.fields?.length || 0})` },
           { id: 'ARTWORK_DESIGN', label: '4. Artwork & Design Engine' },
-          { id: 'PRICING', label: '5. Pricing Rules' },
+          { id: 'PRICING', label: `5. Pricing Rules & Offers (${pricingRules.length})` },
           { id: 'INVENTORY', label: '6. Inventory & Materials' },
           { id: 'PREVIEW', label: '7. Live Customer Flow Simulator' },
         ].map((tab) => (
@@ -679,6 +927,88 @@ export default function AdminProductEditorPage() {
                   </div>
                 );
               })()}
+            </div>
+
+            {/* Default Product Size (Admin-configured; read-only for customer storefront) */}
+            <div className="md:col-span-2 p-4 bg-slate-50 border border-slate-200/90 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-2.5">
+                <div>
+                  <label className="block text-xs font-black text-slate-900 uppercase tracking-wider">
+                    Product Default Size (Fixed Standard Dimensions)
+                  </label>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Set the factory standard dimensions for this product. Customers <strong>cannot edit or delete</strong> this size on the storefront; it is displayed as a verified manufacturing specification.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase bg-slate-200 text-slate-800 px-2 py-0.5 rounded border border-slate-300 flex-shrink-0 self-start sm:self-center">
+                  <RiLockLine className="h-3 w-3" /> Storefront Read-Only
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={defaultSize}
+                  onChange={(e) => setDefaultSize(e.target.value)}
+                  placeholder="e.g. 89 mm x 54 mm (Standard Visiting Card) or 2.5 x 6 ft"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900 placeholder:font-normal placeholder:text-slate-400 shadow-2xs"
+                />
+
+                {/* Standard Dimension Quick Presets */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider mr-1">
+                    Quick Presets:
+                  </span>
+                  {[
+                    { label: '89 x 54 mm (Visiting Card)', value: '89 mm x 54 mm (Standard Visiting Card)' },
+                    { label: 'A4 (210 x 297 mm)', value: 'A4 (210 mm x 297 mm)' },
+                    { label: 'A5 (148 x 210 mm)', value: 'A5 (148 mm x 210 mm)' },
+                    { label: 'A3 (297 x 420 mm)', value: 'A3 (297 mm x 420 mm)' },
+                    { label: '2.5 x 6 ft (Standee)', value: '2.5 x 6 ft (800 x 2000 mm Aluminium Base)' },
+                    { label: '3 x 6 ft (Flex Banner)', value: '3 x 6 ft (900 x 1800 mm)' },
+                    { label: '200 x 150 x 60 mm (Box)', value: '200 mm x 150 mm x 60 mm (Custom Presentation Box)' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setDefaultSize(preset.value)}
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition-all cursor-pointer ${
+                        defaultSize === preset.value
+                          ? 'bg-slate-900 text-[#FFED00] font-bold shadow-2xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  {defaultSize && (
+                    <button
+                      type="button"
+                      onClick={() => setDefaultSize('')}
+                      className="px-2 py-0.5 rounded text-[10px] font-mono text-red-600 hover:bg-red-50 hover:text-red-700 ml-auto"
+                    >
+                      Clear Size
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Live Customer Storefront Preview Badge */}
+              {defaultSize && (
+                <div className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                      Customer Storefront Preview:
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 text-xs">
+                      {defaultSize}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                    <RiSparklingFill className="h-3 w-3 text-[#E3A008]" /> Fixed Default Size Active
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="md:col-span-2">
@@ -1188,30 +1518,583 @@ export default function AdminProductEditorPage() {
         </div>
       )}
 
-      {/* TAB 5: PRICING RULES */}
+      {/* TAB 5: PRICING RULES & QUANTITY TIER OFFERS */}
       {activeTab === 'PRICING' && (
         <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm space-y-6">
-          <h2 className="text-sm font-black text-zinc-900 uppercase tracking-wider border-b border-zinc-100 pb-3">
-            Authoritative Pricing Engine
-          </h2>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-2">
-              <span className="text-xs font-bold text-zinc-900 block">Base Unit Price</span>
-              <div className="text-2xl font-black text-zinc-900 font-mono">
-                {formatCurrency(basePrice)}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <RiDiscountPercentLine className="h-5 w-5 text-amber-500" />
+                <h2 className="text-sm font-black text-zinc-900 uppercase tracking-wider">
+                  Quantity Tier Offers & Bulk Pricing Rules
+                </h2>
               </div>
-              <p className="text-[11px] text-zinc-500">
-                Minimum starting rate for {minQuantity} units prior to custom option additions.
+              <p className="text-xs text-zinc-500 mt-1">
+                Configure quantity threshold discounts. When customers order above these thresholds, the discount % is <strong>auto-applied</strong> instantly in the cart and checkout.
               </p>
             </div>
 
-            <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-2">
-              <span className="text-xs font-bold text-zinc-900 block">GST Tariff Policy</span>
-              <div className="text-2xl font-black text-emerald-600 font-mono">18.00% GST</div>
-              <p className="text-[11px] text-zinc-500">
-                Standard Indian Print tariff (9% CGST + 9% SGST intra-state or 18% IGST inter-state).
-              </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleApplyPresetRules('STANDARD')}
+                disabled={isLoadingRules}
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-50 transition flex items-center gap-1.5 cursor-pointer"
+                title="Populate 500 (5%), 1000 (10%), 2500 (15%), 5000 (20%) tiers"
+              >
+                <RiCoupon3Line className="h-3.5 w-3.5 text-amber-500" />
+                <span>Standard Tiers</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPresetRules('WHOLESALE')}
+                disabled={isLoadingRules}
+                className="px-3 py-1.5 rounded-lg border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-50 transition flex items-center gap-1.5 cursor-pointer"
+                title="Populate Commercial Wholesale volume tiers"
+              >
+                <RiMoneyDollarCircleLine className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Wholesale Tiers</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenAddRuleModal}
+                className="px-3.5 py-1.5 rounded-lg bg-[#FCDD55] text-zinc-950 font-black text-xs border border-zinc-900 shadow-sm hover:bg-[#FBBF24] transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <RiAddLine className="h-4 w-4" />
+                <span>Add Offer Tier</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Pricing Overview Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
+              <span className="text-[11px] font-bold text-zinc-500 uppercase font-mono block">Base Unit Price</span>
+              <div className="text-xl font-black text-zinc-900 font-mono mt-1">
+                {formatCurrency(basePrice)}
+              </div>
+              <span className="text-[10px] text-zinc-400">Starting rate for 1 unit</span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
+              <span className="text-[11px] font-bold text-zinc-500 uppercase font-mono block">Pricing Model</span>
+              <div className="text-xl font-black text-zinc-900 font-mono mt-1 uppercase">
+                {product.pricingModel || 'TIERED'}
+              </div>
+              <span className="text-[10px] text-zinc-400">Automatic volume discount model</span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200">
+              <span className="text-[11px] font-bold text-amber-800 uppercase font-mono block">Configured Tiers</span>
+              <div className="text-xl font-black text-amber-950 font-mono mt-1">
+                {pricingRules.length} Active Rules
+              </div>
+              <span className="text-[10px] text-amber-700">Applied automatically on customer selection</span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200">
+              <span className="text-[11px] font-bold text-emerald-800 uppercase font-mono block">Max Offer Discount</span>
+              <div className="text-xl font-black text-emerald-700 font-mono mt-1">
+                {pricingRules.length > 0
+                  ? `${Math.max(
+                      0,
+                      ...pricingRules.map((r) => {
+                        const combo = (r.attributeCombination as any) || {};
+                        return r.discountPercent || combo.discountPercent || 0;
+                      })
+                    )}% OFF`
+                  : '0% OFF'}
+              </div>
+              <span className="text-[10px] text-emerald-600">Peak customer volume savings</span>
+            </div>
+          </div>
+
+          {/* Pricing Rules Table */}
+          <div className="border border-zinc-200 rounded-xl overflow-hidden shadow-2xs">
+            <div className="bg-zinc-50 px-4 py-3 border-b border-zinc-200 flex items-center justify-between">
+              <span className="text-xs font-black uppercase text-zinc-800 font-mono">
+                Active Quantity Tiers ({pricingRules.length})
+              </span>
+              <span className="text-[11px] text-zinc-500 font-mono">
+                Sorted by Minimum Quantity Ascending
+              </span>
+            </div>
+
+            {pricingRules.length === 0 ? (
+              <div className="p-8 text-center space-y-3">
+                <div className="h-12 w-12 rounded-full bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
+                  <RiCoupon3Line className="h-6 w-6" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-900">No Quantity Offer Rules Configured Yet</h4>
+                  <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
+                    Set up bulk offer tiers (e.g., 500+ units: 10% OFF) to incentivize customers to place larger print runs.
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetRules('STANDARD')}
+                    className="px-3.5 py-1.5 rounded-lg border border-zinc-300 text-xs font-bold text-zinc-800 hover:bg-zinc-50 cursor-pointer"
+                  >
+                    Apply Standard 4-Tier Presets
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenAddRuleModal}
+                    className="px-4 py-1.5 rounded-lg bg-[#FCDD55] text-zinc-950 font-black text-xs border border-zinc-900 shadow-sm hover:bg-[#FBBF24] cursor-pointer"
+                  >
+                    + Create Custom Rule
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-zinc-200 bg-zinc-50/50 text-zinc-500 uppercase font-mono text-[10px]">
+                      <th className="py-2.5 px-4 font-bold">Quantity Range</th>
+                      <th className="py-2.5 px-4 font-bold">Offer Badge / Label</th>
+                      <th className="py-2.5 px-4 font-bold text-right">Discount %</th>
+                      <th className="py-2.5 px-4 font-bold text-right">Offer Unit Price</th>
+                      <th className="py-2.5 px-4 font-bold text-right">Est. Savings / 1,000 Units</th>
+                      <th className="py-2.5 px-4 font-bold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {pricingRules
+                      .slice()
+                      .sort((a, b) => a.minQty - b.minQty)
+                      .map((rule) => {
+                        const combo = (rule.attributeCombination as any) || {};
+                        const disc = rule.discountPercent ?? combo.discountPercent ?? 0;
+                        const label = rule.label || combo.label || `${disc}% OFF Bulk Tier`;
+                        const unitRate = Number(rule.unitPrice);
+                        const savingsPerUnit = Math.max(0, Number(basePrice) - unitRate);
+                        const savingsPer1k = savingsPerUnit * 1000;
+
+                        return (
+                          <tr key={rule.id} className="hover:bg-zinc-50/80 transition-colors">
+                            <td className="py-3 px-4 font-mono font-bold text-zinc-900">
+                              <span className="bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200">
+                                {rule.minQty.toLocaleString()}
+                                {rule.maxQty && rule.maxQty < 999999
+                                  ? ` – ${rule.maxQty.toLocaleString()}`
+                                  : '+'} units
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded text-[11px]">
+                                <span>🎉</span>
+                                <span>{label}</span>
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600">
+                              {disc > 0 ? `${disc}% OFF` : 'Custom Rate'}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono">
+                              <div className="font-bold text-zinc-900">
+                                {formatCurrency(unitRate)} <span className="text-[10px] text-zinc-400 font-normal">/ unit</span>
+                              </div>
+                              {disc > 0 && (
+                                <div className="text-[10px] text-zinc-400 line-through">
+                                  {formatCurrency(basePrice)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-emerald-700">
+                              {savingsPer1k > 0 ? formatCurrency(savingsPer1k) : '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditRuleModal(rule)}
+                                  className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition cursor-pointer"
+                                  title="Edit Tier Rule"
+                                >
+                                  <RiEditLine className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRule(rule.id)}
+                                  disabled={isDeletingRuleId === rule.id}
+                                  className="p-1.5 rounded-md text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                  title="Delete Tier Rule"
+                                >
+                                  <RiDeleteBin7Line className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Live Admin Tier Simulator & Verification Sandbox */}
+          <div className="p-5 bg-gradient-to-r from-amber-50/50 via-zinc-50 to-emerald-50/40 rounded-xl border border-zinc-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <RiSparklingFill className="h-4 w-4 text-amber-500" />
+                <h3 className="text-xs font-black uppercase text-zinc-900 tracking-wider font-mono">
+                  Live Rule Evaluation Simulator
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono text-zinc-500 bg-white px-2 py-0.5 rounded border border-zinc-200">
+                Runtime Match Verification
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-700 mb-1">
+                  Test Quantity: <strong className="text-zinc-900 font-mono">{testSimQty.toLocaleString()} units</strong>
+                </label>
+                <input
+                  type="range"
+                  min="50"
+                  max="10000"
+                  step="50"
+                  value={testSimQty}
+                  onChange={(e) => setTestSimQty(Number(e.target.value))}
+                  className="w-full accent-zinc-900"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  value={testSimQty}
+                  onChange={(e) => setTestSimQty(Math.max(1, Number(e.target.value)))}
+                  className="w-full mt-1.5 bg-white border border-zinc-200 rounded px-2.5 py-1 text-xs font-mono text-zinc-900"
+                />
+              </div>
+
+              {(() => {
+                const matched = pricingRules
+                  .slice()
+                  .sort((a, b) => a.minQty - b.minQty)
+                  .reverse()
+                  .find((r) => testSimQty >= r.minQty && (r.maxQty === null || r.maxQty === undefined || testSimQty <= r.maxQty));
+
+                const combo = (matched?.attributeCombination as any) || {};
+                const disc = matched ? (matched.discountPercent ?? combo.discountPercent ?? 0) : 0;
+                const unitRate = matched ? Number(matched.unitPrice) : Number(basePrice);
+                const subtotal = unitRate * testSimQty;
+                const originalTotal = Number(basePrice) * testSimQty;
+                const savings = Math.max(0, originalTotal - subtotal);
+
+                return (
+                  <>
+                    <div className="p-3 bg-white rounded-lg border border-zinc-200 shadow-2xs space-y-1">
+                      <span className="text-[10px] uppercase font-mono font-bold text-zinc-400 block">
+                        Matched Tier Rule
+                      </span>
+                      {matched ? (
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                          <span>🎉</span>
+                          <span className="truncate">{matched.label || combo.label || `${disc}% OFF`}</span>
+                        </div>
+                      ) : (
+                        <div className="text-xs font-bold text-zinc-500">
+                          Standard Base Rate (No Tier Matched)
+                        </div>
+                      )}
+                      <div className="text-[11px] font-mono font-bold text-emerald-600">
+                        {disc > 0 ? `${disc}% Discount Applied` : '0% Discount'}
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white rounded-lg border border-zinc-200 shadow-2xs space-y-1">
+                      <span className="text-[10px] uppercase font-mono font-bold text-zinc-400 block">
+                        Effective Price & Savings
+                      </span>
+                      <div className="text-xs font-bold text-zinc-900 font-mono">
+                        {formatCurrency(unitRate)} / unit • Total: {formatCurrency(subtotal)}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-emerald-700">
+                        Customer Saves: {formatCurrency(savings)}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* FULFILLMENT & PAYMENT SURCHARGES: COURIER & COD CONFIGURATION */}
+          <div className="pt-6 border-t border-zinc-200 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <RiTruckLine className="h-5 w-5 text-indigo-600" />
+                  <h3 className="text-sm font-black text-zinc-900 uppercase tracking-wider font-mono">
+                    Courier Shipping & COD Payment Surcharges
+                  </h3>
+                </div>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Configure per-product delivery rates, free delivery thresholds, and Cash on Delivery (COD) handling surcharges. Click any preset or enter custom values.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveGeneral}
+                disabled={isSaving}
+                className="px-4 py-2 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <RiLoader4Line className="h-4 w-4 animate-spin" />
+                    <span>Saving Rules...</span>
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <RiCheckboxCircleLine className="h-4 w-4 text-emerald-400" />
+                    <span>Changes Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <RiShieldCheckLine className="h-4 w-4 text-[#FFED00]" />
+                    <span>Save Fulfillment Rules</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Card 1: Courier / Shipping Delivery Rate */}
+              <div className="p-5 rounded-xl border border-zinc-200 bg-zinc-50/60 space-y-4 hover:border-zinc-300 transition">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                      <RiTruckLine className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider font-mono">
+                        Doorstep Courier Rate
+                      </h4>
+                      <span className="text-[11px] text-zinc-500">
+                        Direct shipment to customer address
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="text-xs font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                    {courierCharge === 0 ? 'FREE DELIVERY' : `₹${courierCharge} / order`}
+                  </span>
+                </div>
+
+                {/* Clickable Quick Presets */}
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 font-mono">
+                    Quick Courier Presets (Click to Apply)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { label: 'Free Shipping', value: 0, threshold: 0 },
+                      { label: 'Standard (₹100)', value: 100, threshold: 1000 },
+                      { label: 'Express (₹250)', value: 250, threshold: 2500 },
+                      { label: 'Heavy Cargo (₹500)', value: 500, threshold: 5000 },
+                    ].map((preset) => {
+                      const isSelected = courierCharge === preset.value;
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setCourierCharge(preset.value);
+                            setFreeShippingThreshold(preset.threshold);
+                          }}
+                          className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'border-indigo-600 bg-indigo-50/70 ring-1.5 ring-indigo-600 shadow-2xs'
+                              : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
+                          }`}
+                        >
+                          <div className="text-xs font-bold text-zinc-900 truncate">
+                            {preset.label}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                            {preset.value === 0 ? 'Always Free' : `Free over ₹${preset.threshold}`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Custom Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Courier Charge (₹)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 font-mono">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        value={courierCharge}
+                        onChange={(e) => setCourierCharge(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-200 rounded-lg pl-7 pr-3 py-2 text-xs font-mono font-bold text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                      />
+                    </div>
+                    <span className="text-[10px] text-zinc-400 mt-1 block">
+                      Fee added when order is shipped via courier
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Free Shipping Above (₹)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 font-mono">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={freeShippingThreshold}
+                        onChange={(e) => setFreeShippingThreshold(Math.max(0, Number(e.target.value)))}
+                        className="w-full bg-white border border-zinc-200 rounded-lg pl-7 pr-3 py-2 text-xs font-mono font-bold text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                      />
+                    </div>
+                    <span className="text-[10px] text-zinc-400 mt-1 block">
+                      Set 0 to disable free shipping threshold
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: COD (Cash on Delivery) Surcharge & Availability */}
+              <div className="p-5 rounded-xl border border-zinc-200 bg-zinc-50/60 space-y-4 hover:border-zinc-300 transition">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+                      <RiHandCoinLine className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider font-mono">
+                        Cash on Delivery (COD) Rules
+                      </h4>
+                      <span className="text-[11px] text-zinc-500">
+                        Pay on delivery handling fee & permission
+                      </span>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`text-xs font-mono font-black px-2.5 py-1 rounded-lg border ${
+                      allowCod
+                        ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                        : 'text-rose-700 bg-rose-50 border-rose-200'
+                    }`}
+                  >
+                    {allowCod ? (codSurcharge === 0 ? 'COD FREE' : `COD +₹${codSurcharge}`) : 'COD DISABLED'}
+                  </span>
+                </div>
+
+                {/* Clickable Quick Presets */}
+                <div>
+                  <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2 font-mono">
+                    Quick COD Presets (Click to Apply)
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { label: 'COD Enabled (₹0)', allow: true, surcharge: 0 },
+                      { label: 'Standard COD (₹50)', allow: true, surcharge: 50 },
+                      { label: 'High Risk (₹100)', allow: true, surcharge: 100 },
+                      { label: 'Disable COD', allow: false, surcharge: 0 },
+                    ].map((preset) => {
+                      const isSelected = allowCod === preset.allow && (!preset.allow || codSurcharge === preset.surcharge);
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setAllowCod(preset.allow);
+                            if (preset.allow) {
+                              setCodSurcharge(preset.surcharge);
+                            }
+                          }}
+                          className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'border-emerald-600 bg-emerald-50/70 ring-1.5 ring-emerald-600 shadow-2xs'
+                              : 'border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50'
+                          }`}
+                        >
+                          <div className="text-xs font-bold text-zinc-900 truncate">
+                            {preset.label}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                            {preset.allow ? `+₹${preset.surcharge} surcharge` : 'Online Only'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* COD Toggle & Custom Surcharge */}
+                <div className="space-y-3 pt-2">
+                  <div
+                    onClick={() => setAllowCod(!allowCod)}
+                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-zinc-200 hover:border-zinc-300 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={allowCod}
+                        onChange={(e) => setAllowCod(e.target.checked)}
+                        className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 cursor-pointer accent-zinc-900"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-zinc-900 block">
+                          Allow Cash on Delivery (COD)
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                          Customers can select COD at checkout for this product
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded ${allowCod ? 'bg-emerald-100 text-emerald-800' : 'bg-zinc-100 text-zinc-500'}`}>
+                      {allowCod ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  {allowCod && (
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-700 mb-1">
+                        COD Handling Surcharge (₹)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400 font-mono">
+                          ₹
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={codSurcharge}
+                          onChange={(e) => setCodSurcharge(Math.max(0, Number(e.target.value)))}
+                          className="w-full bg-white border border-zinc-200 rounded-lg pl-7 pr-3 py-2 text-xs font-mono font-bold text-zinc-900 focus:ring-2 focus:ring-zinc-900 focus:outline-none"
+                        />
+                      </div>
+                      <span className="text-[10px] text-zinc-400 mt-1 block">
+                        Extra fee added to order when customer selects Cash on Delivery
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1281,6 +2164,7 @@ export default function AdminProductEditorPage() {
               minQuantity,
               maxQuantity,
               productionDays,
+              defaultSize,
               artworkRequirement,
               artworkPrice,
               artworkQualityVerification,
@@ -1793,6 +2677,147 @@ export default function AdminProductEditorPage() {
                   className="px-4 py-1.5 rounded-lg bg-[#FCDD55] text-zinc-950 font-black text-xs border border-zinc-900"
                 >
                   Save Option
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD / EDIT PRICING RULE (OFFER TIER) */}
+      {isRuleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="p-4 border-b border-zinc-200 flex items-center justify-between bg-zinc-50">
+              <div className="flex items-center gap-2">
+                <RiDiscountPercentLine className="h-5 w-5 text-amber-500" />
+                <h3 className="text-xs font-black text-zinc-900 uppercase">
+                  {editingRuleId ? 'Edit Quantity Offer Tier' : 'Add New Quantity Offer Tier'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsRuleModalOpen(false)}
+                className="p-1 rounded text-zinc-400 hover:text-zinc-700 transition"
+              >
+                <RiCloseLine className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRule} className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-800 mb-1">
+                    Min Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={ruleMinQty}
+                    onChange={(e) => setRuleMinQty(Math.max(1, Number(e.target.value)))}
+                    placeholder="e.g. 500"
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono font-bold"
+                  />
+                  <span className="text-[10px] text-zinc-400">Lower threshold</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-800 mb-1">
+                    Max Quantity (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    min={ruleMinQty}
+                    value={ruleMaxQty}
+                    onChange={(e) => setRuleMaxQty(e.target.value)}
+                    placeholder="Leave empty for unlimited"
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono font-bold"
+                  />
+                  <span className="text-[10px] text-zinc-400">Empty = {ruleMinQty}+ units</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3">
+                <span className="text-[11px] font-black uppercase text-amber-900 font-mono block">
+                  Discount & Unit Rate Configuration
+                </span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-800 mb-1">
+                      Discount Offer (%) *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={ruleDiscountPercent}
+                        onChange={(e) => handleDiscountPercentChange(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-300 rounded-lg px-3 py-2 text-xs font-mono font-bold pr-7"
+                      />
+                      <span className="absolute right-2.5 top-2 text-xs font-mono text-zinc-500">%</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-zinc-800 mb-1">
+                      Calculated Unit Price (₹)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-2 text-xs font-mono text-zinc-500">₹</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={ruleUnitPrice}
+                        onChange={(e) => handleUnitPriceChange(Number(e.target.value))}
+                        className="w-full bg-white border border-zinc-300 rounded-lg pl-6 pr-3 py-2 text-xs font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-amber-950 font-mono flex items-center justify-between border-t border-amber-200/80 pt-2">
+                  <span>Base: ₹{Number(basePrice).toFixed(2)}</span>
+                  <span>→</span>
+                  <span className="font-bold text-emerald-700">
+                    Tier Rate: ₹{Number(ruleUnitPrice).toFixed(2)} ({ruleDiscountPercent}% OFF)
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-800 mb-1">
+                  Offer Display Badge / Label (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={ruleLabel}
+                  onChange={(e) => setRuleLabel(e.target.value)}
+                  placeholder={`e.g. Save ${ruleDiscountPercent}% on ${ruleMinQty}+ items`}
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs"
+                />
+                <span className="text-[10px] text-zinc-400">
+                  Displayed as a highlighted badge to customers in storefront & checkout
+                </span>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setIsRuleModalOpen(false)}
+                  className="px-4 py-2 rounded-lg border text-xs font-bold text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingRule}
+                  className="px-5 py-2 rounded-lg bg-[#FCDD55] text-zinc-950 font-black text-xs border border-zinc-900 shadow-sm hover:bg-[#FBBF24] cursor-pointer"
+                >
+                  {isSavingRule ? 'Saving...' : editingRuleId ? 'Update Tier Rule' : 'Create Tier Rule'}
                 </button>
               </div>
             </form>

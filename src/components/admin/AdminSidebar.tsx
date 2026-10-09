@@ -8,17 +8,9 @@ import { getVisibleAdminNavigation } from './navigation';
 import {
   RiCloseLine,
   RiLogoutBoxRLine,
-  RiPulseLine,
-  RiTimeLine,
-  RiBuilding2Line,
   RiSearch2Line,
-  RiFlashlightLine,
-  RiShieldCheckFill,
-  RiRadioButtonLine,
-  RiArrowRightSLine,
   RiPrinterLine,
 } from 'react-icons/ri';
-import { Badge } from '@/components/ui';
 
 interface AdminSidebarProps {
   isOpen?: boolean;
@@ -69,27 +61,27 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
   const formattedRole = user?.role ? user.role.replace(/_/g, ' ') : 'OPERATOR';
 
   const sidebarContent = (
-    <div className="h-full flex flex-col justify-between bg-white border-r border-slate-200/90 text-slate-800 select-none">
+    <div className="h-full flex flex-col justify-between bg-white border-r border-[#E5E5E5] text-black select-none">
       {/* Top Header & Navigation Section */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Brand Identity Header */}
-        <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between flex-shrink-0">
+        <div className="p-4 border-b border-[#E5E5E5] bg-[#F8F8F8] flex items-center justify-between flex-shrink-0">
           <Link href="/admin/dashboard" className="flex items-center gap-3 group">
-            <div className="h-8 w-8 rounded-lg bg-[#FFED00] text-slate-950 flex items-center justify-center font-bold text-xs border border-[#E3A008]/40 shadow-xs flex-shrink-0 transition-transform group-hover:scale-105">
+            <div className="h-8 w-8 rounded-[8px] bg-[#FFED00] text-black flex items-center justify-center font-bold text-xs border border-neutral-300 shadow-xs flex-shrink-0 transition-transform group-hover:scale-105">
               <RiPrinterLine className="h-4 w-4" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-[14px] tracking-tight text-slate-900">
+                <span className="font-semibold text-[14px] tracking-tight text-black">
                   PRINT BAZZAR
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-slate-900 text-[#FFED00]">
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-black text-[#FFED00]">
                   2.0 OS
                 </span>
               </div>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[10px] font-mono tracking-wider text-slate-500 font-medium uppercase">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#166534]" />
+                <span className="text-[10px] font-mono tracking-wider text-[#737373] font-medium uppercase">
                   PLANT OPERATING SYSTEM
                 </span>
               </div>
@@ -100,7 +92,7 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
           {onClose && (
             <button
               onClick={onClose}
-              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-200/60 transition-colors"
+              className="md:hidden p-1.5 rounded-lg text-[#737373] hover:text-black hover:bg-[#F5F5F5] transition-colors"
               aria-label="Close sidebar"
             >
               <RiCloseLine className="h-5 w-5" />
@@ -109,24 +101,24 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
         </div>
 
         {/* Quick Filter Search Bar */}
-        <div className="px-3 py-2.5 border-b border-slate-100 bg-white">
+        <div className="px-3 py-2.5 border-b border-[#E5E5E5] bg-white">
           <div className="relative">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search station, queue, tools..."
-              className="w-full h-8 pl-8 pr-3 text-[13px] font-normal bg-slate-50 text-slate-900 border border-slate-200 rounded-lg placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition-all font-sans"
+              className="w-full h-8 pl-8 pr-3 text-[13px] font-normal bg-[#F5F5F5] text-black border border-[#E5E5E5] rounded-[8px] placeholder:text-[#737373] focus:outline-none focus:border-black focus:bg-white focus:ring-1 focus:ring-black transition-all font-sans"
             />
-            <RiSearch2Line className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <RiSearch2Line className="h-3.5 w-3.5 text-[#737373] absolute left-2.5 top-1/2 -translate-y-1/2" />
           </div>
         </div>
 
         {/* Navigation Sections */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-5 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4 custom-scrollbar">
           {filteredSections.map((section) => (
             <div key={section.id} className="space-y-1">
-              <div className="px-2.5 py-1 text-[11px] font-mono font-semibold tracking-wider text-slate-400 uppercase">
+              <div className="px-2.5 py-1 text-[11px] font-semibold tracking-wider text-[#737373] uppercase">
                 {section.title}
               </div>
 
@@ -152,17 +144,17 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
                       key={item.id}
                       href={item.href}
                       onClick={onClose}
-                      className={`group flex items-center justify-between px-2.5 py-2 rounded-lg text-[13px] transition-all relative ${
+                      className={`group flex items-center justify-between px-2.5 py-2 rounded-[8px] text-[13px] transition-all relative ${
                         isActive
-                          ? 'bg-slate-900 text-white shadow-xs font-semibold'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 font-medium'
+                          ? 'bg-[#FFED00] text-black font-semibold border border-neutral-300 shadow-xs'
+                          : 'text-[#525252] hover:text-black hover:bg-[#F5F5F5] font-medium'
                       }`}
                       title={item.description}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Icon
                           className={`h-4 w-4 flex-shrink-0 transition-colors ${
-                            isActive ? 'text-[#FFED00]' : 'text-slate-400 group-hover:text-slate-700'
+                            isActive ? 'text-black' : 'text-[#737373] group-hover:text-black'
                           }`}
                         />
                         <span className="truncate">{item.label}</span>
@@ -170,10 +162,10 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
 
                       {item.badge && (
                         <span
-                          className={`text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded uppercase ${
+                          className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${
                             isActive
-                              ? 'bg-[#FFED00] text-slate-950'
-                              : 'bg-amber-50 text-amber-900 border border-amber-200'
+                              ? 'bg-black text-[#FFED00]'
+                              : 'bg-[#FEFCE8] text-[#854D0E] border border-yellow-200'
                           }`}
                         >
                           {item.badge}
@@ -189,17 +181,17 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
       </div>
 
       {/* Bottom User Card & Sign Out */}
-      <div className="p-3 border-t border-slate-100 bg-slate-50/80 flex-shrink-0">
-        <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-xs flex items-center justify-between">
+      <div className="p-3 border-t border-[#E5E5E5] bg-[#F8F8F8] flex-shrink-0">
+        <div className="p-2.5 rounded-[8px] bg-white border border-[#E5E5E5] shadow-xs flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-8 w-8 rounded-lg bg-[#FFED00] text-slate-950 font-bold text-xs flex items-center justify-center flex-shrink-0 border border-[#E3A008]/40 shadow-xs">
+            <div className="h-8 w-8 rounded-[6px] bg-[#FFED00] text-black font-bold text-xs flex items-center justify-center flex-shrink-0 border border-neutral-300 shadow-xs">
               {initials}
             </div>
             <div className="min-w-0">
-              <span className="text-[13px] font-semibold text-slate-900 block truncate leading-tight">
+              <span className="text-[13px] font-semibold text-black block truncate leading-tight">
                 {user?.fullName || 'Plant Operator'}
               </span>
-              <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block truncate">
+              <span className="text-[10px] font-mono text-[#737373] uppercase tracking-wider block truncate">
                 {formattedRole}
               </span>
             </div>
@@ -207,7 +199,7 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
 
           <button
             onClick={() => logout()}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+            className="p-1.5 rounded-[6px] text-[#737373] hover:text-[#B91C1C] hover:bg-[#FEF2F2] transition-colors"
             title="Sign out of ERP Console"
           >
             <RiLogoutBoxRLine className="h-4 w-4" />
@@ -228,10 +220,10 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
       {isOpen && (
         <div className="fixed inset-0 z-50 md:hidden flex">
           <div
-            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
             onClick={onClose}
           />
-          <div className="relative w-72 h-full max-w-xs shadow-2xl z-10 animate-in slide-in-from-left duration-200">
+          <div className="relative w-72 h-full max-w-xs shadow-xl z-10 animate-in slide-in-from-left duration-200">
             {sidebarContent}
           </div>
         </div>
@@ -239,3 +231,4 @@ export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
     </>
   );
 }
+

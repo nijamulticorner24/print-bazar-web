@@ -250,22 +250,22 @@ export default function CheckoutPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24">
+    <div className="min-h-screen bg-[#F8F8F8] pb-28 md:pb-24 w-full max-w-full overflow-x-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 py-8 px-4 sm:px-8">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white border-b border-[#E5E5E5] py-5 sm:py-7 px-4 sm:px-8">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              <Lock className="h-3.5 w-3.5 text-[#E3A008]" />
+            <div className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-[#854D0E] bg-[#FEFCE8] px-2.5 py-0.5 rounded-[6px] border border-yellow-200 uppercase tracking-wider mb-1.5">
+              <Lock className="h-3.5 w-3.5 text-[#854D0E]" />
               <span>SECURE 256-BIT ENCRYPTED CHECKOUT</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-display">
+            <h1 className="text-[20px] sm:text-[24px] font-semibold text-black tracking-tight font-sans">
               Commercial Order Checkout
             </h1>
           </div>
 
-          <Link href="/cart">
-            <Button variant="outline" size="sm">
+          <Link href="/cart" className="self-start sm:self-auto">
+            <Button variant="outline" size="sm" className="min-h-[40px]">
               <ShoppingBag className="h-3.5 w-3.5 mr-1" />
               <span>Return to Cart</span>
             </Button>

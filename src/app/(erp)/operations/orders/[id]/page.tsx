@@ -610,7 +610,7 @@ export default function OperationalOrderDetailPage({
           </div>
 
           {/* ═══════════════════════════════════════════════════════════════ */}
-          {/* OE PRIMARY OPERATIONAL ASSIGNMENT & DISPATCH DECISION            */}
+          {/* OE PRIMARY OPERATIONAL ASSIGNMENT & DISPATCH CONTROL              */}
           {/* ═══════════════════════════════════════════════════════════════ */}
           {(() => {
             const isArtworkReady =
@@ -632,25 +632,36 @@ export default function OperationalOrderDetailPage({
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-300">
-                        SINGLE OPERATIONAL DECISION
+                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-900 border border-blue-300">
+                        OPERATIONS DISPATCH CONTROL
                       </span>
                       {isArtworkReady ? (
                         <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          ARTWORK READY → PRODUCTION OPERATOR
+                          ARTWORK READY
                         </span>
                       ) : (
                         <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                          ARTWORK NOT READY → DESIGNER
+                          DESIGN REQUIRED
                         </span>
                       )}
                     </div>
                     <h3 className="text-base font-black text-slate-900 mt-1">
-                      Current Operational Owner & Assignment
+                      Operational Roles & Assignments
                     </h3>
                   </div>
 
-                  {isArtworkReady ? (
+                  {/* Action Buttons for BOTH options */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setAssignmentModalType('DESIGN')}
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                    >
+                      <RiUserFollowLine className="h-4 w-4 mr-1.5" />
+                      <span>{order.assignedDesigner ? 'Reassign Prepress Designer' : 'Assign Prepress Designer'}</span>
+                    </Button>
+
                     <Button
                       variant="primary"
                       size="sm"
@@ -660,40 +671,70 @@ export default function OperationalOrderDetailPage({
                       <RiPrinterLine className="h-4 w-4 mr-1.5" />
                       <span>{order.assignedOperator ? 'Reassign Production Operator' : 'Assign Production Operator'}</span>
                     </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => setAssignmentModalType('DESIGN')}
-                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
-                    >
-                      <RiUserFollowLine className="h-4 w-4 mr-1.5" />
-                      <span>{order.assignedDesigner ? 'Reassign Prepress Designer' : 'Assign Designer'}</span>
-                    </Button>
-                  )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                  {/* Current Active Person */}
-                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                    <span className="text-[10px] font-mono text-slate-400 uppercase block font-bold">
-                      {isArtworkReady ? 'ASSIGNED PRODUCTION OPERATOR' : 'ASSIGNED PREPRESS DESIGNER'}
-                    </span>
-                    {(isArtworkReady ? order.assignedOperator : order.assignedDesigner) ? (
-                      <div className="mt-1.5">
-                        <div className="font-black text-slate-900 text-sm">
-                          {(isArtworkReady ? order.assignedOperator : order.assignedDesigner).fullName}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                  {/* Prepress Designer Card */}
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] font-mono text-slate-400 uppercase block font-bold">
+                        PREPRESS DESIGNER
+                      </span>
+                      {order.assignedDesigner ? (
+                        <div className="mt-1.5">
+                          <div className="font-black text-slate-900 text-sm">
+                            {order.assignedDesigner.fullName}
+                          </div>
+                          <div className="text-slate-500 font-mono text-[11px]">
+                            {order.assignedDesigner.email}
+                          </div>
                         </div>
-                        <div className="text-slate-500 font-mono text-[11px]">
-                          {(isArtworkReady ? order.assignedOperator : order.assignedDesigner).email}
+                      ) : (
+                        <div className="mt-1.5 flex items-center gap-1.5 text-amber-700 font-bold">
+                          <RiAlertLine className="h-4 w-4 shrink-0 text-amber-600" />
+                          <span>Unassigned</span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="mt-1.5 flex items-center gap-1.5 text-amber-700 font-bold">
-                        <RiAlertLine className="h-4 w-4 shrink-0 text-amber-600" />
-                        <span>Unassigned (OE Action Required)</span>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentModalType('DESIGN')}
+                      className="mt-2 text-[11px] font-bold text-amber-700 hover:text-amber-900 text-left underline"
+                    >
+                      {order.assignedDesigner ? 'Change Designer' : '+ Assign Designer'}
+                    </button>
+                  </div>
+
+                  {/* Production Operator Card */}
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] font-mono text-slate-400 uppercase block font-bold">
+                        PRODUCTION OPERATOR
+                      </span>
+                      {order.assignedOperator ? (
+                        <div className="mt-1.5">
+                          <div className="font-black text-slate-900 text-sm">
+                            {order.assignedOperator.fullName}
+                          </div>
+                          <div className="text-slate-500 font-mono text-[11px]">
+                            {order.assignedOperator.email}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-1.5 flex items-center gap-1.5 text-blue-700 font-bold">
+                          <RiAlertLine className="h-4 w-4 shrink-0 text-blue-600" />
+                          <span>Unassigned</span>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentModalType('PRODUCTION')}
+                      className="mt-2 text-[11px] font-bold text-blue-700 hover:text-blue-900 text-left underline"
+                    >
+                      {order.assignedOperator ? 'Change Operator' : '+ Assign Operator'}
+                    </button>
                   </div>
 
                   {/* Artwork Status */}
@@ -707,10 +748,10 @@ export default function OperationalOrderDetailPage({
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                           : 'bg-amber-100 text-amber-800 border border-amber-300'
                       }`}>
-                        {isArtworkReady ? 'ARTWORK READY / APPROVED' : 'DESIGN REQUIRED'}
+                        {isArtworkReady ? 'READY / APPROVED' : 'DESIGN REQUIRED'}
                       </span>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        {isArtworkReady ? 'Artwork verified ready for shop-floor press run.' : 'Requires designer to create/verify production artwork.'}
+                        {isArtworkReady ? 'Artwork verified for press run.' : 'Requires prepress artwork creation.'}
                       </p>
                     </div>
                   </div>

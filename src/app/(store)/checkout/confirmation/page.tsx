@@ -26,25 +26,25 @@ function ConfirmationContent() {
   const isSplit = paymentMode === 'SPLIT_50';
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] py-12 px-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-3xl space-y-8">
+    <div className="min-h-screen bg-[#F8F8F8] py-6 sm:py-10 px-4 sm:px-6 lg:px-8 pb-28 md:pb-12 w-full max-w-full overflow-x-hidden">
+      <div className="mx-auto max-w-3xl space-y-6 sm:space-y-8">
         {/* Success Banner Card */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 p-8 text-center shadow-card space-y-4">
-          <div className="h-16 w-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200 shadow-sm">
-            <CheckCircle2 className="h-9 w-9 stroke-[2.5]" />
+        <div className="bg-white rounded-xl border border-[#E5E5E5] p-6 sm:p-8 text-center shadow-xs space-y-4">
+          <div className="h-14 w-14 sm:h-16 sm:w-16 bg-[#F0FDF4] text-[#166534] rounded-full flex items-center justify-center mx-auto border border-green-200 shadow-xs">
+            <CheckCircle2 className="h-8 w-8 sm:h-9 sm:w-9 stroke-[2.5]" />
           </div>
 
-          <div className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+          <div className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-[#166534] bg-[#F0FDF4] px-3 py-1 rounded-full border border-green-200">
             <span>
               {isSplit ? 'ORDER CONFIRMED & 50% ADVANCE RECEIVED' : 'ORDER CONFIRMED & PAYMENT VERIFIED'}
             </span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight font-display">
+          <h1 className="text-[20px] sm:text-[26px] font-semibold text-black tracking-tight font-sans leading-tight">
             Your Print Job is Queued for Production!
           </h1>
 
-          <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+          <p className="text-[13px] sm:text-[14px] text-[#525252] max-w-lg mx-auto leading-relaxed">
             Order Master Record <strong>#{orderNumber}</strong> has been generated and dispatched to our automated prepress RIP engines.
           </p>
 

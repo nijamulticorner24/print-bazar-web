@@ -13,32 +13,32 @@ export function cn(...inputs: ClassValue[]) {
 // 1. BUTTON
 // -------------------------------------------------------------
 const buttonVariants = cva(
-  'inline-flex items-center justify-center font-bold tracking-tight rounded-[8px] transition-all duration-150 select-none disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFED00] focus-visible:ring-offset-2 active:scale-[0.98]',
+  'inline-flex items-center justify-center font-medium tracking-tight rounded-[8px] transition-all duration-150 select-none disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFED00] focus-visible:ring-offset-2 active:scale-[0.98] cursor-pointer',
   {
     variants: {
       variant: {
         primary:
-          'bg-[#FFED00] hover:bg-[#F2E100] text-slate-950 border border-[#E3A008]/40 shadow-sm shadow-[#FFED00]/20 font-black',
+          'bg-[#FFED00] hover:bg-[#F2E100] text-black border border-neutral-300/80 shadow-xs font-semibold',
         secondary:
-          'bg-[#E3A008] hover:bg-[#C88A06] text-white border border-[#C88A06] shadow-sm font-bold',
+          'bg-white hover:bg-[#F5F5F5] text-black border border-[#E5E5E5] shadow-xs',
         dark:
-          'bg-slate-900 hover:bg-slate-800 text-white border border-slate-900 shadow-sm',
+          'bg-black hover:bg-neutral-900 text-white border border-black shadow-xs',
         outline:
-          'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 shadow-xs hover:border-slate-300',
+          'bg-white hover:bg-[#F5F5F5] text-black border border-[#E5E5E5] shadow-xs',
         subtle:
-          'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-transparent',
+          'bg-[#F5F5F5] hover:bg-[#E5E5E5] text-black border border-transparent',
         ghost:
-          'hover:bg-slate-100 text-slate-700 hover:text-slate-900',
+          'hover:bg-[#F5F5F5] text-black',
         danger:
-          'bg-red-600 hover:bg-red-700 text-white shadow-sm border border-red-700',
+          'bg-[#FEF2F2] hover:bg-red-100 text-[#B91C1C] border border-red-200 shadow-xs',
         dangerOutline:
-          'bg-white hover:bg-red-50 text-red-600 border border-red-200 shadow-xs',
+          'bg-white hover:bg-red-50 text-[#B91C1C] border border-red-200 shadow-xs',
       },
       size: {
-        xs: 'text-[11px] h-7 px-2.5 gap-1.5',
-        sm: 'text-xs h-8 px-3 gap-1.5',
-        md: 'text-xs h-10 px-4 gap-2',
-        lg: 'text-sm h-12 px-6 gap-2.5 font-bold',
+        xs: 'text-[12px] h-7 px-2.5 gap-1.5',
+        sm: 'text-[13px] h-8 px-3 gap-1.5',
+        md: 'text-[14px] h-9 sm:h-10 px-4 gap-2',
+        lg: 'text-[14px] h-11 px-6 gap-2.5 font-semibold',
         icon: 'h-9 w-9 p-0',
         iconSm: 'h-7 w-7 p-0',
       },
@@ -79,21 +79,21 @@ Button.displayName = 'Button';
 // 2. BADGE & STATUS BADGE
 // -------------------------------------------------------------
 const badgeVariants = cva(
-  'inline-flex items-center font-mono font-bold uppercase tracking-wider rounded px-2 py-0.5 text-[10px] transition-colors',
+  'inline-flex items-center font-mono font-medium uppercase tracking-wider rounded px-2 py-0.5 text-[10px] transition-colors',
   {
     variants: {
       variant: {
-        yellow: 'bg-[#FFFBEB] text-[#92400E] border border-[#FFED00]',
-        brand: 'bg-[#FFED00] text-slate-950 font-black border border-[#E3A008]/50',
-        gold: 'bg-amber-50 text-amber-900 border border-amber-300',
-        emerald: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
-        blue: 'bg-sky-50 text-sky-800 border border-sky-200',
-        indigo: 'bg-indigo-50 text-indigo-800 border border-indigo-200',
-        purple: 'bg-purple-50 text-purple-800 border border-purple-200',
-        rose: 'bg-rose-50 text-rose-800 border border-rose-200',
-        red: 'bg-red-50 text-red-800 border border-red-200',
-        zinc: 'bg-slate-100 text-slate-700 border border-slate-200',
-        dark: 'bg-slate-900 text-white font-bold',
+        yellow: 'bg-[#FEFCE8] text-[#854D0E] border border-[#FFED00]',
+        brand: 'bg-[#FFED00] text-black font-semibold border border-neutral-300',
+        gold: 'bg-[#FEFCE8] text-[#854D0E] border border-yellow-200',
+        emerald: 'bg-[#F0FDF4] text-[#166534] border border-green-200',
+        blue: 'bg-[#F0F9FF] text-[#075985] border border-sky-200',
+        indigo: 'bg-[#EEF2FF] text-[#3730A3] border border-indigo-200',
+        purple: 'bg-[#FAF5FF] text-[#6B21A8] border border-purple-200',
+        rose: 'bg-[#FFF1F2] text-[#9F1239] border border-rose-200',
+        red: 'bg-[#FEF2F2] text-[#B91C1C] border border-red-200',
+        zinc: 'bg-[#F5F5F5] text-[#525252] border border-[#E5E5E5]',
+        dark: 'bg-black text-white font-semibold',
       },
     },
     defaultVariants: {
@@ -124,7 +124,7 @@ export function StatusBadge({
   const norm = status?.toUpperCase() || 'UNKNOWN';
 
   let variant: VariantProps<typeof badgeVariants>['variant'] = 'zinc';
-  let dotColor = 'bg-slate-400';
+  let dotColor = 'bg-[#737373]';
 
   if (
     norm.includes('PAID') ||
@@ -137,7 +137,7 @@ export function StatusBadge({
     norm.includes('ON_TIME')
   ) {
     variant = 'emerald';
-    dotColor = 'bg-emerald-500';
+    dotColor = 'bg-[#166534]';
   } else if (
     norm.includes('PENDING') ||
     norm.includes('PROGRESS') ||
@@ -148,7 +148,7 @@ export function StatusBadge({
     norm.includes('PACKING')
   ) {
     variant = 'blue';
-    dotColor = 'bg-sky-500';
+    dotColor = 'bg-[#075985]';
   } else if (
     norm.includes('REQUIRED') ||
     norm.includes('APPROVAL') ||
@@ -158,7 +158,7 @@ export function StatusBadge({
     norm.includes('WARNING')
   ) {
     variant = 'gold';
-    dotColor = 'bg-amber-500';
+    dotColor = 'bg-[#854D0E]';
   } else if (
     norm.includes('HOLD') ||
     norm.includes('REJECTED') ||
@@ -168,7 +168,7 @@ export function StatusBadge({
     norm.includes('OVERDUE')
   ) {
     variant = 'red';
-    dotColor = 'bg-red-500';
+    dotColor = 'bg-[#B91C1C]';
   }
 
   const label = status.replace(/_/g, ' ');
@@ -181,7 +181,7 @@ export function StatusBadge({
         className
       )}
     >
-      <span className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0 animate-pulse', dotColor)} />
+      <span className={cn('h-1.5 w-1.5 rounded-full flex-shrink-0', dotColor)} />
       <span>{label}</span>
     </span>
   );
@@ -198,7 +198,7 @@ export function Card({
   return (
     <div
       className={cn(
-        'bg-white border border-slate-200/90 rounded-[10px] p-5 shadow-card transition-all',
+        'bg-white border border-[#E5E5E5] rounded-[8px] p-4 sm:p-5 shadow-xs transition-all',
         className
       )}
       {...props}
@@ -224,18 +224,18 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        'flex items-center justify-between pb-3 mb-4 border-b border-slate-100',
+        'flex items-center justify-between pb-3 mb-4 border-b border-[#E5E5E5]',
         className
       )}
     >
       <div>
         {title && (
-          <h3 className="text-sm font-black text-slate-900 tracking-tight font-display">
+          <h3 className="text-[15px] sm:text-[16px] font-semibold text-black tracking-tight font-sans">
             {title}
           </h3>
         )}
         {subtitle && (
-          <p className="text-xs text-slate-500 mt-0.5 leading-tight">
+          <p className="text-[12px] sm:text-[13px] text-[#525252] mt-0.5 leading-tight font-sans">
             {subtitle}
           </p>
         )}
@@ -261,25 +261,25 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full space-y-1">
         {label && (
-          <label className="block text-xs font-bold text-slate-800">
+          <label className="block text-[13px] font-medium text-black">
             {label}
-            {props.required && <span className="text-amber-600 ml-0.5">*</span>}
+            {props.required && <span className="text-[#B91C1C] ml-0.5">*</span>}
           </label>
         )}
         <input
           ref={ref}
           className={cn(
-            'w-full h-10 px-3 py-2 text-xs font-medium text-slate-900 bg-white border border-slate-200 rounded-[8px] placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400',
-            error && 'border-red-500 focus:border-red-500 focus:ring-red-500 bg-red-50/20',
+            'w-full h-9 sm:h-10 px-3 py-2 text-[14px] font-normal text-black bg-white border border-[#E5E5E5] rounded-[8px] placeholder:text-[#737373] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors disabled:bg-[#F5F5F5] disabled:text-[#737373]',
+            error && 'border-[#B91C1C] focus:border-[#B91C1C] focus:ring-[#B91C1C] bg-red-50/20',
             className
           )}
           {...props}
         />
         {hint && !error && (
-          <p className="text-[11px] text-slate-500 leading-tight">{hint}</p>
+          <p className="text-[12px] text-[#737373] leading-tight">{hint}</p>
         )}
         {error && (
-          <p className="text-[11px] font-medium text-red-600 leading-tight">
+          <p className="text-[12px] font-medium text-[#B91C1C] leading-tight">
             {error}
           </p>
         )}
@@ -308,18 +308,18 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'bg-slate-50/70 border-2 border-dashed border-slate-200 rounded-xl p-8 text-center flex flex-col items-center justify-center min-h-[220px]',
+        'bg-[#F5F5F5]/60 border border-dashed border-[#E5E5E5] rounded-[8px] p-8 text-center flex flex-col items-center justify-center min-h-[200px]',
         className
       )}
     >
       {Icon && (
-        <div className="h-12 w-12 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-400 mb-3 shadow-xs">
-          <Icon className="h-6 w-6" />
+        <div className="h-10 w-10 rounded-full bg-white border border-[#E5E5E5] flex items-center justify-center text-[#737373] mb-3 shadow-xs">
+          <Icon className="h-5 w-5" />
         </div>
       )}
-      <h4 className="text-sm font-bold text-slate-800">{title}</h4>
+      <h4 className="text-[15px] font-semibold text-black">{title}</h4>
       {description && (
-        <p className="text-xs text-slate-500 max-w-sm mt-1 leading-relaxed">
+        <p className="text-[13px] text-[#525252] max-w-sm mt-1 leading-relaxed">
           {description}
         </p>
       )}
@@ -337,7 +337,7 @@ export function Skeleton({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('animate-pulse bg-slate-100 rounded-[6px]', className)}
+      className={cn('animate-pulse bg-[#E5E5E5]/60 rounded-[6px]', className)}
       {...props}
     />
   );
@@ -348,4 +348,6 @@ export function Skeleton({
 // -------------------------------------------------------------
 export * from './Modal';
 export * from './Tabs';
+export * from './ProductCard';
+
 

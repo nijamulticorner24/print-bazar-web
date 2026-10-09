@@ -13,16 +13,30 @@ const config: Config = {
       colors: {
         brand: {
           yellow: '#FFED00',
-          secondary: '#E3A008',
-          accent: '#E3A008',
-          dark: '#0F172A',
-          darkSurface: '#1E293B',
-          darkBorder: '#334155',
+          black: '#000000',
           white: '#FFFFFF',
-          neutral: '#64748B',
-          border: '#E2E8F0',
-          bg: '#F8FAFC',
-          light: '#F1F5F9',
+          canvas: '#F8F8F8',
+          surface: '#FFFFFF',
+          subtle: '#F5F5F5',
+          border: '#E5E5E5',
+          secondaryText: '#525252',
+          mutedText: '#737373',
+          success: '#166534',
+          successBg: '#F0FDF4',
+          warning: '#854D0E',
+          warningBg: '#FEFCE8',
+          error: '#B91C1C',
+          errorBg: '#FEF2F2',
+          info: '#075985',
+          infoBg: '#F0F9FF',
+          secondary: '#E3A008',
+          accent: '#FFED00',
+          dark: '#000000',
+          darkSurface: '#171717',
+          darkBorder: '#262626',
+          neutral: '#525252',
+          bg: '#F8F8F8',
+          light: '#F5F5F5',
         },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -31,23 +45,23 @@ const config: Config = {
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: '#FFED00',
-          foreground: '#0F172A',
+          foreground: '#000000',
         },
         secondary: {
-          DEFAULT: '#E3A008',
-          foreground: '#0F172A',
+          DEFAULT: '#FFFFFF',
+          foreground: '#000000',
         },
         accent: {
-          DEFAULT: '#E3A008',
-          foreground: '#0F172A',
+          DEFAULT: '#FFED00',
+          foreground: '#000000',
         },
         muted: {
-          DEFAULT: '#F1F5F9',
-          foreground: '#64748B',
+          DEFAULT: '#F5F5F5',
+          foreground: '#737373',
         },
         card: {
           DEFAULT: '#FFFFFF',
-          foreground: '#0F172A',
+          foreground: '#000000',
         },
       },
       borderRadius: {
@@ -60,11 +74,11 @@ const config: Config = {
         '2xl': '20px',
       },
       boxShadow: {
-        subtle: '0 1px 3px 0 rgba(15, 23, 42, 0.05)',
-        card: '0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.06)',
-        elevated: '0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04)',
-        brand: '0 4px 14px 0 rgba(255, 237, 0, 0.35)',
-        yellow: '0 4px 14px 0 rgba(255, 237, 0, 0.35)',
+        subtle: '0 1px 2px 0 rgba(0, 0, 0, 0.04)',
+        card: '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04)',
+        elevated: '0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
+        brand: '0 4px 14px 0 rgba(255, 237, 0, 0.30)',
+        yellow: '0 4px 14px 0 rgba(255, 237, 0, 0.30)',
       },
       fontFamily: {
         sans: [
@@ -72,13 +86,15 @@ const config: Config = {
           'Inter',
           '-apple-system',
           'BlinkMacSystemFont',
+          '"Segoe UI"',
           'sans-serif',
         ],
         display: [
-          'var(--font-outfit)',
-          'Outfit',
+          'var(--font-inter)',
+          'Inter',
           '-apple-system',
           'BlinkMacSystemFont',
+          '"Segoe UI"',
           'sans-serif',
         ],
         mono: [
@@ -95,4 +111,5 @@ const config: Config = {
 };
 
 export default config;
+
 

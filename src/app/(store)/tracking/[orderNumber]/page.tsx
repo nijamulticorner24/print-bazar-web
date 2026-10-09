@@ -159,28 +159,28 @@ export default function OrderTrackingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24">
+    <div className="min-h-screen bg-[#F8F8F8] pb-28 md:pb-24 w-full max-w-full overflow-x-hidden">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 py-8 px-4 sm:px-8">
-        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white border-b border-[#E5E5E5] py-5 sm:py-7 px-4 sm:px-8">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 font-mono text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-              <Truck className="h-3.5 w-3.5 text-[#E3A008]" />
+            <div className="inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold text-[#854D0E] bg-[#FEFCE8] px-2.5 py-0.5 rounded-[6px] border border-yellow-200 uppercase tracking-wider mb-1.5">
+              <Truck className="h-3.5 w-3.5 text-[#854D0E]" />
               <span>
                 {isDesignRoute ? 'ROUTE B: DESIGN SERVICE TRACKING' : 'ROUTE A: CUSTOMER ARTWORK TRACKING'}
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-display flex items-center gap-3">
+            <h1 className="text-[20px] sm:text-[24px] font-semibold text-black tracking-tight font-sans flex flex-wrap items-center gap-2 sm:gap-3">
               <span>Order #{orderNumber}</span>
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-900 text-amber-300">
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-black text-[#FFED00]">
                 {order.currentStatus || 'IN PROGRESS'}
               </span>
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 self-start sm:self-auto">
             <Link href={`/invoices/${orderNumber}`}>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="min-h-[40px]">
                 <FileText className="h-3.5 w-3.5 mr-1.5" />
                 <span>GST Tax Invoice</span>
               </Button>

@@ -302,23 +302,23 @@ export default function CustomerOrdersPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24">
+    <div className="min-h-screen bg-[#F8F8F8] pb-28 md:pb-24 w-full max-w-full overflow-x-hidden">
       {/* 1. Page Header */}
-      <div className="bg-white border-b border-slate-200 blueprint-grid py-8 px-4 sm:px-8">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white border-b border-[#E5E5E5] blueprint-grid py-5 sm:py-7 px-4 sm:px-8">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-slate-500 uppercase tracking-widest mb-1.5">
-              <Link href="/account" className="hover:text-slate-900 transition-colors">
+            <div className="flex items-center gap-2 text-xs font-mono text-[#737373] uppercase tracking-widest mb-1.5">
+              <Link href="/account" className="hover:text-black transition-colors">
                 My Account
               </Link>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-900 font-bold">Print Orders</span>
+              <ChevronRight className="w-3.5 h-3.5 text-[#737373]" />
+              <span className="text-black font-semibold">Print Orders</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-              <ShoppingBag className="w-7 h-7 text-[#E3A008]" />
+            <h1 className="text-[20px] sm:text-[24px] font-semibold text-black tracking-tight font-sans flex items-center gap-2.5">
+              <ShoppingBag className="w-6 h-6 text-[#854D0E]" />
               Order History & Tracking
             </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1">
+            <p className="text-[13px] text-[#525252] mt-1">
               Real-time production status, digital proofs, invoices, and dispatch tracking for all print jobs.
             </p>
           </div>

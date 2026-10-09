@@ -9,7 +9,7 @@ export default function ErpLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="erp-root font-sans text-[14px] leading-[1.45] text-slate-900 bg-[#F8FAFC]">
+    <div className="erp-root font-sans text-[14px] leading-[1.5] text-black bg-[#F8F8F8]">
       <AdminShell>{children}</AdminShell>
     </div>
   );

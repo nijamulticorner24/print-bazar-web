@@ -6,7 +6,7 @@ import { TrustSection } from '@/components/home/TrustSection';
 
 export default function HomePage() {
   return (
-    <div className="flex flex-col bg-white">
+    <div className="flex flex-col bg-white w-full max-w-full overflow-x-hidden">
       {/* 1. Hero Section (Reference Composition) */}
       <HeroSection />
 

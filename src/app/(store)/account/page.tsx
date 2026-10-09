@@ -481,61 +481,57 @@ export default function CustomerAccountPage() {
     .toUpperCase() || 'CU';
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24">
+    <div className="min-h-screen bg-[#F8F8F8] pb-28 md:pb-24 w-full max-w-full overflow-x-hidden">
       {/* ------------------------------------------------------------- */}
       {/* 1. CUSTOMER PROFILE HERO HEADER                               */}
       {/* ------------------------------------------------------------- */}
-      <div className="bg-white text-slate-900 py-8 px-4 sm:px-8 border-b border-slate-200">
-        <div className="mx-auto max-w-7xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <div className="bg-white text-black py-5 sm:py-7 px-4 sm:px-8 border-b border-[#E5E5E5]">
+        <div className="mx-auto max-w-7xl flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
           {/* User Details */}
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-2xl bg-[#FFED00] text-slate-950 flex items-center justify-center font-black text-2xl border border-[#E3A008]/50 shadow-sm flex-shrink-0">
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <div className="h-12 w-12 sm:h-14 sm:w-14 rounded-xl bg-[#FFED00] text-black flex items-center justify-center font-bold text-lg sm:text-xl border border-neutral-300 shadow-xs flex-shrink-0">
               {userInitials}
             </div>
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-display">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-[20px] sm:text-[24px] font-semibold text-black tracking-tight font-sans">
                   {user?.fullName}
                 </h1>
-                <span className="bg-emerald-50 text-emerald-800 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <RiShieldCheckLine className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="bg-[#F0FDF4] text-[#166534] text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border border-green-200 flex items-center gap-1">
+                  <RiShieldCheckLine className="h-3 w-3 text-[#166534]" />
                   <span>VERIFIED B2B CUSTOMER</span>
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 font-mono mt-1">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#737373] font-mono mt-1">
                 <span className="flex items-center gap-1">
-                  <RiMailLine className="h-3.5 w-3.5 text-slate-400" />
+                  <RiMailLine className="h-3.5 w-3.5 text-[#737373]" />
                   <span>{user?.email}</span>
                 </span>
                 {user?.phone && (
                   <span className="flex items-center gap-1">
-                    <RiPhoneLine className="h-3.5 w-3.5 text-slate-400" />
+                    <RiPhoneLine className="h-3.5 w-3.5 text-[#737373]" />
                     <span>{user.phone}</span>
                   </span>
                 )}
-                <span className="flex items-center gap-1">
-                  <RiBuilding4Line className="h-3.5 w-3.5 text-slate-400" />
-                  <span>Acme Enterprise Account</span>
-                </span>
               </div>
             </div>
           </div>
 
           {/* Action CTAs */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2 pt-2 md:pt-0">
             {user?.role && user.role !== 'CUSTOMER' && (
               <Link href={getRoleDestination(user.role)}>
-                <Button variant="outline" size="sm" className="flex items-center gap-1.5 font-bold">
-                  <span>Open ERP Console</span>
-                  <RiExternalLinkLine className="h-4 w-4" />
+                <Button variant="outline" size="sm" className="flex items-center gap-1.5 font-medium min-h-[36px]">
+                  <span>ERP Console</span>
+                  <RiExternalLinkLine className="h-3.5 w-3.5" />
                 </Button>
               </Link>
             )}
 
             <Link href="/products">
-              <Button variant="primary" size="sm" className="font-bold text-slate-950 flex items-center gap-1.5 shadow-sm">
+              <Button variant="primary" size="sm" className="font-medium text-black flex items-center gap-1.5 shadow-xs min-h-[36px]">
                 <RiAddLine className="h-4 w-4" />
-                <span>Configure New Job</span>
+                <span>Configure Job</span>
               </Button>
             </Link>
 
@@ -544,7 +540,7 @@ export default function CustomerAccountPage() {
               variant="ghost"
               size="sm"
               onClick={() => logout()}
-              className="text-rose-600 hover:bg-rose-50 flex items-center gap-1 font-semibold"
+              className="text-[#B91C1C] hover:bg-[#FEF2F2] flex items-center gap-1 font-medium min-h-[36px]"
             >
               <RiLogoutBoxRLine className="h-4 w-4" />
               <span>Sign Out</span>

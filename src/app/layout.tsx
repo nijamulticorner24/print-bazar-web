@@ -1,14 +1,7 @@
-import type { Metadata } from 'next';
-import { Outfit, Inter } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from '../components/Providers';
-
-const outfit = Outfit({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800', '900'],
-  variable: '--font-outfit',
-  display: 'swap',
-});
 
 const inter = Inter({
   subsets: ['latin'],
@@ -18,8 +11,16 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'PRINT BAZZAR 2.0 | Industrial Customer-to-Production Operating System',
+  title: 'PRINT BAZZAR 2.0 | Customer-to-Production Operating System',
   description: 'Production-grade Operating System for Commercial Printing, Custom Packaging, Signage & Corporate Merchandise.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -28,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${outfit.variable} ${inter.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} overflow-x-hidden`} suppressHydrationWarning>
       <body
-        className="min-h-screen bg-white flex flex-col font-sans text-slate-900 antialiased selection:bg-[#FFED00] selection:text-slate-950"
+        className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#F8F8F8] flex flex-col font-sans text-black antialiased selection:bg-[#FFED00] selection:text-black"
         suppressHydrationWarning
       >
         <Providers>{children}</Providers>
@@ -38,4 +39,5 @@ export default function RootLayout({
     </html>
   );
 }
+
 

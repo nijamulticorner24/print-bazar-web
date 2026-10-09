@@ -31,7 +31,7 @@ export function PageHeader({
   return (
     <div
       className={cn(
-        'flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/90 bg-white p-5 rounded-xl border shadow-xs',
+        'flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E5E5E5] bg-white p-4 sm:p-5 rounded-[8px] border shadow-xs',
         className
       )}
     >
@@ -39,8 +39,8 @@ export function PageHeader({
         <div className="flex items-center gap-2.5 flex-wrap">
           <h1
             className={cn(
-              'font-semibold text-slate-900 tracking-tight leading-tight',
-              compact ? 'text-[22px] sm:text-[24px]' : 'text-[24px] sm:text-[28px]'
+              'font-semibold text-black tracking-tight leading-[1.25]',
+              compact ? 'text-[18px] sm:text-[20px]' : 'text-[20px] sm:text-[24px]'
             )}
           >
             {title}
@@ -48,7 +48,7 @@ export function PageHeader({
           {badge}
         </div>
         {description && (
-          <p className="text-[13px] sm:text-[14px] text-slate-500 leading-normal max-w-3xl">
+          <p className="text-[13px] sm:text-[14px] text-[#525252] leading-normal max-w-3xl">
             {description}
           </p>
         )}
@@ -64,7 +64,7 @@ export function PageHeader({
 }
 
 /**
- * 28px Semibold Page Title
+ * 24px Semibold Page Title (Main Page Heading)
  */
 export function PageTitle({
   className,
@@ -74,7 +74,7 @@ export function PageTitle({
   return (
     <h1
       className={cn(
-        'text-[24px] sm:text-[28px] font-semibold text-slate-900 tracking-tight leading-[1.2]',
+        'text-[20px] sm:text-[24px] font-semibold text-black tracking-tight leading-[1.25]',
         className
       )}
       {...props}
@@ -85,7 +85,7 @@ export function PageTitle({
 }
 
 /**
- * 24px Semibold Page Title Compact
+ * 20px Semibold Page Title Compact (Dense Screens / Drawers)
  */
 export function PageTitleCompact({
   className,
@@ -95,7 +95,7 @@ export function PageTitleCompact({
   return (
     <h1
       className={cn(
-        'text-[20px] sm:text-[24px] font-semibold text-slate-900 tracking-tight leading-[1.25]',
+        'text-[18px] sm:text-[20px] font-semibold text-black tracking-tight leading-[1.25]',
         className
       )}
       {...props}
@@ -106,7 +106,7 @@ export function PageTitleCompact({
 }
 
 /**
- * 18px Semibold Section Title
+ * 18px Semibold Section Title (Main Content Sections)
  */
 export function SectionTitle({
   className,
@@ -116,7 +116,7 @@ export function SectionTitle({
   return (
     <h2
       className={cn(
-        'text-[18px] font-semibold text-slate-900 tracking-tight leading-[1.3]',
+        'text-[18px] font-semibold text-black tracking-tight leading-[1.35]',
         className
       )}
       {...props}
@@ -127,7 +127,7 @@ export function SectionTitle({
 }
 
 /**
- * 16px Semibold Subsection Title
+ * 16px Semibold Subsection Title (Panels / Grouped Fields)
  */
 export function SubsectionTitle({
   className,
@@ -137,7 +137,7 @@ export function SubsectionTitle({
   return (
     <h3
       className={cn(
-        'text-[16px] font-semibold text-slate-900 tracking-tight leading-[1.35]',
+        'text-[16px] font-semibold text-black tracking-tight leading-[1.35]',
         className
       )}
       {...props}
@@ -148,7 +148,7 @@ export function SubsectionTitle({
 }
 
 /**
- * 15px Semibold Card / Panel Title
+ * 15px Semibold Card Title (Cards / Kanban Items)
  */
 export function CardTitle({
   className,
@@ -158,7 +158,7 @@ export function CardTitle({
   return (
     <h4
       className={cn(
-        'text-[15px] font-semibold text-slate-900 leading-[1.35]',
+        'text-[15px] font-semibold text-black leading-[1.35]',
         className
       )}
       {...props}
@@ -169,7 +169,7 @@ export function CardTitle({
 }
 
 /**
- * 14px Regular Body Content
+ * 14px Regular Body Text (Default Application Copy)
  */
 export function BodyText({
   className,
@@ -179,7 +179,7 @@ export function BodyText({
   return (
     <p
       className={cn(
-        'text-[14px] font-normal text-slate-700 leading-[1.45]',
+        'text-[14px] font-normal text-black leading-[1.5]',
         className
       )}
       {...props}
@@ -190,7 +190,7 @@ export function BodyText({
 }
 
 /**
- * 14px Medium Body Emphasis
+ * 14px Medium Body Emphasis (Important Values / Inline Emphasis)
  */
 export function BodyEmphasis({
   className,
@@ -200,7 +200,7 @@ export function BodyEmphasis({
   return (
     <span
       className={cn(
-        'text-[14px] font-medium text-slate-900 leading-[1.45]',
+        'text-[14px] font-medium text-black leading-[1.5]',
         className
       )}
       {...props}
@@ -211,7 +211,7 @@ export function BodyEmphasis({
 }
 
 /**
- * 13px Table Text
+ * 13px Table Body Text (Dense Operational Data)
  */
 export function TableText({
   className,
@@ -223,7 +223,7 @@ export function TableText({
     <span
       className={cn(
         'text-[13px] leading-[1.4]',
-        emphasis ? 'font-medium text-slate-900' : 'font-normal text-slate-700',
+        emphasis ? 'font-medium text-black' : 'font-normal text-neutral-800',
         className
       )}
       {...props}
@@ -234,7 +234,7 @@ export function TableText({
 }
 
 /**
- * 12px Table Header
+ * 12px Table Header (Column Labels)
  */
 export function TableHeader({
   className,
@@ -244,7 +244,7 @@ export function TableHeader({
   return (
     <th
       className={cn(
-        'text-[12px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 leading-[1.3]',
+        'text-[12px] font-semibold text-[#525252] uppercase tracking-wider py-2.5 px-3 leading-[1.3] text-left',
         className
       )}
       {...props}
@@ -255,7 +255,7 @@ export function TableHeader({
 }
 
 /**
- * 12px-13px Form Label
+ * 13px Form Label (Inputs, Selects, Radio Groups)
  */
 export function FormLabel({
   className,
@@ -266,19 +266,19 @@ export function FormLabel({
   return (
     <label
       className={cn(
-        'block text-[12px] sm:text-[13px] font-medium text-slate-800 leading-[1.3] mb-1.5',
+        'block text-[13px] font-medium text-black leading-[1.35] mb-1.5',
         className
       )}
       {...props}
     >
       {children}
-      {required && <span className="text-amber-600 ml-0.5 font-normal">*</span>}
+      {required && <span className="text-[#B91C1C] ml-0.5 font-normal">*</span>}
     </label>
   );
 }
 
 /**
- * 12px Helper Text
+ * 12px Helper / Metadata Text (Hints, Timestamps, Secondary Details)
  */
 export function HelperText({
   className,
@@ -287,7 +287,7 @@ export function HelperText({
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p
-      className={cn('text-[12px] font-normal text-slate-500 leading-tight mt-1', className)}
+      className={cn('text-[12px] font-normal text-[#737373] leading-[1.4] mt-1', className)}
       {...props}
     >
       {children}
@@ -296,7 +296,7 @@ export function HelperText({
 }
 
 /**
- * 12px-13px Error Text
+ * 12px Error Text
  */
 export function ErrorText({
   className,
@@ -305,7 +305,7 @@ export function ErrorText({
 }: React.HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p
-      className={cn('text-[12px] font-medium text-red-600 leading-tight mt-1', className)}
+      className={cn('text-[12px] font-medium text-[#B91C1C] leading-[1.4] mt-1', className)}
       {...props}
     >
       {children}
@@ -314,7 +314,7 @@ export function ErrorText({
 }
 
 /**
- * 11px-12px Caption Text
+ * 12px Caption Text
  */
 export function CaptionText({
   className,
@@ -323,7 +323,7 @@ export function CaptionText({
 }: React.HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
-      className={cn('text-[11px] font-normal text-slate-500 leading-tight', className)}
+      className={cn('text-[12px] font-normal text-[#737373] leading-[1.4]', className)}
       {...props}
     >
       {children}
@@ -332,7 +332,7 @@ export function CaptionText({
 }
 
 /**
- * 24px-32px Dashboard Metric Value with Tabular Nums
+ * 24px-32px Dashboard Metric Value with Tabular Nums (KPI Value)
  */
 export function MetricValue({
   className,
@@ -342,7 +342,7 @@ export function MetricValue({
   return (
     <span
       className={cn(
-        'text-[24px] sm:text-[28px] font-semibold tracking-tight text-slate-900 tabular-nums leading-tight block',
+        'text-[24px] sm:text-[28px] font-semibold tracking-tight text-black tabular-nums leading-[1.1] block',
         className
       )}
       {...props}
@@ -363,7 +363,7 @@ export function PriceText({
   return (
     <span
       className={cn(
-        'text-[13px] sm:text-[14px] font-semibold text-slate-900 tabular-nums',
+        'text-[13px] sm:text-[14px] font-semibold text-black tabular-nums',
         className
       )}
       {...props}
@@ -374,7 +374,7 @@ export function PriceText({
 }
 
 /**
- * 13px SKU / Identifier Code
+ * 12px-13px SKU / Identifier Code (Monospace, Tabular Identifiers)
  */
 export function SkuText({
   className,
@@ -384,7 +384,7 @@ export function SkuText({
   return (
     <span
       className={cn(
-        'text-[13px] font-medium font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded',
+        'text-[12px] sm:text-[13px] font-medium font-mono text-neutral-800 bg-[#F5F5F5] border border-[#E5E5E5] px-1.5 py-0.5 rounded',
         className
       )}
       {...props}
@@ -393,3 +393,4 @@ export function SkuText({
     </span>
   );
 }
+

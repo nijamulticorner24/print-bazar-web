@@ -40,7 +40,7 @@ const STEPS = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="bg-[#F8FAFC] py-14 lg:py-20 border-b border-slate-200">
+    <section id="how-it-works" className="bg-[#F8FAFC] py-14 lg:py-20 border-b border-slate-200 w-full max-w-full overflow-hidden">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
           {/* Left Column: Industrial Printing Press Visual */}

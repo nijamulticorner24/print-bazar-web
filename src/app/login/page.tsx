@@ -69,7 +69,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'admin@printbazzar.com',
     destination: '/admin/dashboard',
     badge: 'Executive',
-    badgeColor: 'bg-purple-100 text-purple-700 border-purple-200',
+    badgeColor: 'bg-[#FEFCE8] text-[#854D0E] border-yellow-200',
     description: 'Full ERP & workflow control',
   },
   {
@@ -78,7 +78,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'operations@printbazzar.com',
     destination: '/operations',
     badge: 'Operations',
-    badgeColor: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    badgeColor: 'bg-[#FEFCE8] text-[#854D0E] border-yellow-300',
     description: 'Central order coordination & assignments',
   },
   {
@@ -87,7 +87,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'operator@printbazzar.com',
     destination: '/production/queue',
     badge: 'Shop Floor',
-    badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
+    badgeColor: 'bg-[#F0F9FF] text-[#075985] border-sky-200',
     description: 'Machine queue & job execution',
   },
   {
@@ -96,7 +96,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'prepress@printbazzar.com',
     destination: '/prepress/artwork',
     badge: 'Prepress',
-    badgeColor: 'bg-pink-100 text-pink-700 border-pink-200',
+    badgeColor: 'bg-[#FAF5FF] text-[#6B21A8] border-purple-200',
     description: 'Artwork proofs & preflight check',
   },
   {
@@ -105,7 +105,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'finalqc@printbazzar.com',
     destination: '/qc/inspection',
     badge: 'Final QC',
-    badgeColor: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    badgeColor: 'bg-[#F0FDF4] text-[#166534] border-green-200',
     description: 'Finished goods quality clearance',
   },
   {
@@ -114,7 +114,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'packing@printbazzar.com',
     destination: '/packing/station',
     badge: 'Fulfillment',
-    badgeColor: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    badgeColor: 'bg-[#EEF2FF] text-[#3730A3] border-indigo-200',
     description: 'Boxing, barcode scan & labels',
   },
   {
@@ -123,7 +123,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'dispatch@printbazzar.com',
     destination: '/dispatch/manifest',
     badge: 'Shipping',
-    badgeColor: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+    badgeColor: 'bg-[#F0F9FF] text-[#075985] border-sky-200',
     description: 'Carrier manifest & tracking',
   },
   {
@@ -132,7 +132,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'sales@printbazzar.com',
     destination: '/sales/orders',
     badge: 'Commercial',
-    badgeColor: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    badgeColor: 'bg-[#F0FDF4] text-[#166534] border-green-200',
     description: 'Quotes, custom pricing & orders',
   },
   {
@@ -141,7 +141,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'accounts@printbazzar.com',
     destination: '/finance/payments',
     badge: 'Finance',
-    badgeColor: 'bg-teal-100 text-teal-700 border-teal-200',
+    badgeColor: 'bg-[#F0FDF4] text-[#166534] border-green-200',
     description: 'Invoices, ledger & payments',
   },
   {
@@ -150,7 +150,7 @@ const SEED_ACCOUNTS: SeedAccount[] = [
     email: 'customer@acme.com',
     destination: '/account',
     badge: 'Client Portal',
-    badgeColor: 'bg-slate-100 text-slate-700 border-slate-200',
+    badgeColor: 'bg-[#F5F5F5] text-[#525252] border-[#E5E5E5]',
     description: 'Direct self-service orders & tracking',
   },
 ];
@@ -302,7 +302,7 @@ function AuthContainer() {
     }
   };
 
-  // Placeholder handler for Google Auth
+  // Handler for Google Auth notice
   const handleGoogleAuth = () => {
     setShowGoogleNotice(true);
     setErrorMessage('');
@@ -312,9 +312,9 @@ function AuthContainer() {
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Left Column: Traditional Auth Form (Sign In & Register) */}
       <div className="lg:col-span-5 space-y-6">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-card">
+        <div className="bg-white border border-[#E5E5E5] rounded-[8px] p-6 sm:p-8 shadow-xs">
           {/* Navigation Tabs (Sign In / Register) */}
-          <div className="flex rounded-xl bg-slate-100 p-1 mb-6">
+          <div className="flex rounded-[8px] bg-[#F5F5F5] p-1 mb-6">
             <button
               type="button"
               onClick={() => {
@@ -322,10 +322,10 @@ function AuthContainer() {
                 setErrorMessage('');
                 setShowGoogleNotice(false);
               }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+              className={`flex-1 py-2 text-[13px] font-semibold rounded-[6px] transition-all ${
                 activeTab === 'signin'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-white text-black shadow-xs'
+                  : 'text-[#525252] hover:text-black'
               }`}
             >
               Sign In
@@ -337,10 +337,10 @@ function AuthContainer() {
                 setErrorMessage('');
                 setShowGoogleNotice(false);
               }}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+              className={`flex-1 py-2 text-[13px] font-semibold rounded-[6px] transition-all ${
                 activeTab === 'register'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
+                  ? 'bg-white text-black shadow-xs'
+                  : 'text-[#525252] hover:text-black'
               }`}
             >
               Create Account
@@ -348,23 +348,23 @@ function AuthContainer() {
           </div>
 
           <div className="mb-5">
-            <h2 className="text-xl font-black tracking-tight text-slate-900 font-display">
+            <h2 className="text-[20px] font-semibold tracking-tight text-black font-sans">
               {activeTab === 'signin' ? 'Welcome Back' : 'Create an Account'}
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-[13px] text-[#525252] mt-1">
               {activeTab === 'signin'
                 ? 'Sign in to access your orders, proofs, and print console.'
                 : 'Join Print Bazzar to place orders, upload artwork, and track jobs.'}
             </p>
           </div>
 
-          {/* Google OAuth Notice Modal/Banner */}
+          {/* Google OAuth Notice Banner */}
           {showGoogleNotice && (
-            <div className="mb-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 animate-in fade-in flex items-start gap-2.5">
-              <Info className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="mb-5 p-3.5 rounded-[8px] bg-[#FEFCE8] border border-yellow-200 text-xs text-[#854D0E] animate-in fade-in flex items-start gap-2.5">
+              <Info className="h-4 w-4 text-[#854D0E] flex-shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <span className="font-bold block">Google OAuth Ready</span>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
+                <span className="font-semibold block">Google OAuth Ready</span>
+                <p className="text-[12px] text-[#854D0E] leading-relaxed">
                   Google Client credentials can be configured in your environment. For testing right now, please sign in with email/password or use the 1-Click Role Switcher on the right.
                 </p>
               </div>
@@ -373,16 +373,16 @@ function AuthContainer() {
 
           {/* Error Alert */}
           {errorMessage && (
-            <div className="mb-5 p-3 rounded-lg bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-xs text-rose-700 animate-in fade-in">
-              <AlertCircle className="h-4 w-4 text-rose-600 flex-shrink-0 mt-0.5" />
+            <div className="mb-5 p-3 rounded-[8px] bg-[#FEF2F2] border border-red-200 flex items-start gap-2.5 text-[13px] text-[#B91C1C] animate-in fade-in">
+              <AlertCircle className="h-4 w-4 text-[#B91C1C] flex-shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {/* Success Alert */}
           {successMessage && (
-            <div className="mb-5 p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-xs text-emerald-700 animate-in fade-in">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+            <div className="mb-5 p-3 rounded-[8px] bg-[#F0FDF4] border border-green-200 flex items-start gap-2.5 text-[13px] text-[#166534] animate-in fade-in">
+              <CheckCircle2 className="h-4 w-4 text-[#166534] flex-shrink-0 mt-0.5" />
               <span>{successMessage}</span>
             </div>
           )}
@@ -392,7 +392,7 @@ function AuthContainer() {
             type="button"
             onClick={handleGoogleAuth}
             disabled={isSubmitting}
-            className="w-full h-11 border border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50/80 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2.5 transition shadow-2xs group"
+            className="w-full h-10 border border-[#E5E5E5] hover:bg-[#F5F5F5] text-black font-medium text-[13px] rounded-[8px] flex items-center justify-center gap-2.5 transition shadow-xs group cursor-pointer"
           >
             <GoogleIcon className="h-4 w-4 group-hover:scale-105 transition-transform" />
             <span>
@@ -403,10 +403,10 @@ function AuthContainer() {
           {/* Divider */}
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200" />
+              <div className="w-full border-t border-[#E5E5E5]" />
             </div>
             <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-wider">
-              <span className="bg-white px-3 text-slate-400 font-mono">
+              <span className="bg-white px-3 text-[#737373] font-mono">
                 or with email
               </span>
             </div>
@@ -415,11 +415,10 @@ function AuthContainer() {
           {/* Tab 1: SIGN IN FORM */}
           {activeTab === 'signin' && (
             <form onSubmit={handleSignIn} className="space-y-4">
-              {/* Email / Mobile Field */}
               <div>
                 <label
                   htmlFor="identifier"
-                  className="block text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5 font-sans"
+                  className="block text-[13px] font-medium text-black mb-1.5 font-sans"
                 >
                   Email or Mobile Number
                 </label>
@@ -433,18 +432,17 @@ function AuthContainer() {
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder="name@company.com or +91 9876543210"
-                    className="w-full h-11 pl-3.5 pr-10 text-xs font-medium bg-slate-50 text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition"
+                    className="w-full h-10 pl-3.5 pr-10 text-[14px] font-normal bg-white text-black border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition"
                   />
-                  <Mail className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Mail className="h-4 w-4 text-[#737373] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Password Field with Show/Hide Toggle */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label
                     htmlFor="password"
-                    className="block text-xs font-bold text-slate-900 uppercase tracking-wider font-sans"
+                    className="block text-[13px] font-medium text-black font-sans"
                   >
                     Password
                   </label>
@@ -454,7 +452,7 @@ function AuthContainer() {
                       e.preventDefault();
                       alert('Default seeded account password is: Admin@12345');
                     }}
-                    className="text-[11px] font-bold text-slate-500 hover:text-slate-900 hover:underline"
+                    className="text-[12px] font-medium text-[#525252] hover:text-black hover:underline"
                   >
                     Forgot password?
                   </a>
@@ -469,26 +467,25 @@ function AuthContainer() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full h-11 pl-3.5 pr-10 text-xs font-medium bg-slate-50 text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition"
+                    className="w-full h-10 pl-3.5 pr-10 text-[14px] font-normal bg-white text-black border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition"
                   />
                   <button
                     type="button"
                     tabIndex={-1}
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#737373] hover:text-black focus:outline-none cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Primary Action Button (#FFED00) */}
               <div className="pt-2">
                 <Button
                   type="submit"
                   variant="primary"
                   size="lg"
-                  className="w-full shadow-brand text-slate-950 font-black tracking-wide"
+                  className="w-full shadow-xs text-black font-semibold tracking-wide"
                   disabled={isSubmitting}
                   isLoading={isSubmitting && submittingAction === 'signin'}
                 >
@@ -498,7 +495,7 @@ function AuthContainer() {
               </div>
 
               <div className="text-center pt-2">
-                <p className="text-xs text-slate-500">
+                <p className="text-[13px] text-[#525252]">
                   Don't have an account?{' '}
                   <button
                     type="button"
@@ -506,7 +503,7 @@ function AuthContainer() {
                       setActiveTab('register');
                       setErrorMessage('');
                     }}
-                    className="font-bold text-slate-900 hover:underline"
+                    className="font-semibold text-black hover:underline cursor-pointer"
                   >
                     Create Account
                   </button>
@@ -518,11 +515,10 @@ function AuthContainer() {
           {/* Tab 2: REGISTER FORM */}
           {activeTab === 'register' && (
             <form onSubmit={handleRegister} className="space-y-4">
-              {/* Full Name */}
               <div>
                 <label
                   htmlFor="regFullName"
-                  className="block text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5 font-sans"
+                  className="block text-[13px] font-medium text-black mb-1.5 font-sans"
                 >
                   Full Name
                 </label>
@@ -536,17 +532,16 @@ function AuthContainer() {
                     value={regFullName}
                     onChange={(e) => setRegFullName(e.target.value)}
                     placeholder="e.g. Rahul Sharma"
-                    className="w-full h-11 pl-3.5 pr-10 text-xs font-medium bg-slate-50 text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition"
+                    className="w-full h-10 pl-3.5 pr-10 text-[14px] font-normal bg-white text-black border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition"
                   />
-                  <User className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <User className="h-4 w-4 text-[#737373] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Email Field */}
               <div>
                 <label
                   htmlFor="regEmail"
-                  className="block text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5 font-sans"
+                  className="block text-[13px] font-medium text-black mb-1.5 font-sans"
                 >
                   Work or Personal Email
                 </label>
@@ -560,19 +555,18 @@ function AuthContainer() {
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
                     placeholder="name@company.com"
-                    className="w-full h-11 pl-3.5 pr-10 text-xs font-medium bg-slate-50 text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition"
+                    className="w-full h-10 pl-3.5 pr-10 text-[14px] font-normal bg-white text-black border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition"
                   />
-                  <Mail className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Mail className="h-4 w-4 text-[#737373] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Phone Field (Optional) */}
               <div>
                 <label
                   htmlFor="regPhone"
-                  className="block text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5 font-sans"
+                  className="block text-[13px] font-medium text-black mb-1.5 font-sans"
                 >
-                  Mobile Number <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                  Mobile Number <span className="text-[#737373] font-normal lowercase">(optional)</span>
                 </label>
                 <div className="relative">
                   <input
@@ -583,17 +577,16 @@ function AuthContainer() {
                     value={regPhone}
                     onChange={(e) => setRegPhone(e.target.value)}
                     placeholder="+91 9876543210"
-                    className="w-full h-11 pl-3.5 pr-10 text-xs font-medium bg-slate-50 text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition"
+                    className="w-full h-10 pl-3.5 pr-10 text-[14px] font-normal bg-white text-black border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition"
                   />
-                  <Phone className="h-4 w-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Phone className="h-4 w-4 text-[#737373] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
-              {/* Password Field */}
               <div>
                 <label
                   htmlFor="regPassword"
-                  className="block text-xs font-bold text-slate-900 uppercase tracking-wider mb-1.5 font-sans"
+                  className="block text-[13px] font-medium text-black mb-1.5 font-sans"
                 >
                   Create Password
                 </label>
@@ -608,26 +601,25 @@ function AuthContainer() {
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
                     placeholder="Minimum 6 characters"
-                    className="w-full h-11 pl-3.5 pr-10 text-xs font-medium bg-slate-50 text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white focus:ring-1 focus:ring-slate-900 transition"
+                    className="w-full h-10 pl-3.5 pr-10 text-[14px] font-normal bg-white text-black border border-[#E5E5E5] rounded-[8px] focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition"
                   />
                   <button
                     type="button"
                     tabIndex={-1}
                     onClick={() => setShowRegPassword(!showRegPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#737373] hover:text-black focus:outline-none cursor-pointer"
                   >
                     {showRegPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Register Button */}
               <div className="pt-2">
                 <Button
                   type="submit"
                   variant="primary"
                   size="lg"
-                  className="w-full shadow-brand text-slate-950 font-black tracking-wide"
+                  className="w-full shadow-xs text-black font-semibold tracking-wide"
                   disabled={isSubmitting}
                   isLoading={isSubmitting && submittingAction === 'register'}
                 >
@@ -637,7 +629,7 @@ function AuthContainer() {
               </div>
 
               <div className="text-center pt-2">
-                <p className="text-xs text-slate-500">
+                <p className="text-[13px] text-[#525252]">
                   Already registered?{' '}
                   <button
                     type="button"
@@ -645,7 +637,7 @@ function AuthContainer() {
                       setActiveTab('signin');
                       setErrorMessage('');
                     }}
-                    className="font-bold text-slate-900 hover:underline"
+                    className="font-semibold text-black hover:underline cursor-pointer"
                   >
                     Sign In
                   </button>
@@ -654,19 +646,19 @@ function AuthContainer() {
             </form>
           )}
 
-          <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <Link href="/" className="hover:text-slate-900 flex items-center gap-1 font-medium">
+          <div className="mt-6 pt-5 border-t border-[#E5E5E5] flex items-center justify-between text-[12px] text-[#525252]">
+            <Link href="/" className="hover:text-black flex items-center gap-1 font-normal">
               <span>← Return to Storefront</span>
             </Link>
-            <div className="flex items-center gap-1.5 text-emerald-700 font-bold">
+            <div className="flex items-center gap-1.5 text-[#166534] font-medium">
               <ShieldCheck className="h-4 w-4" />
               <span>256-Bit SSL Auth</span>
             </div>
           </div>
         </div>
 
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-[11px] text-slate-500 flex items-center gap-3">
-          <Lock className="h-5 w-5 text-slate-400 flex-shrink-0" />
+        <div className="bg-[#F5F5F5] border border-[#E5E5E5] rounded-[8px] p-3 text-[12px] text-[#525252] flex items-center gap-2.5">
+          <Lock className="h-4 w-4 text-[#737373] flex-shrink-0" />
           <span>
             Enterprise role-based permissions are enforced automatically upon login.
           </span>
@@ -675,24 +667,24 @@ function AuthContainer() {
 
       {/* Right Column: Quick Login Role Switcher (Seeded Accounts) */}
       <div className="lg:col-span-7">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-card">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 pb-4 border-b border-slate-100">
+        <div className="bg-white border border-[#E5E5E5] rounded-[8px] p-6 sm:p-7 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 pb-4 border-b border-[#E5E5E5]">
             <div>
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600">
-                  <Zap className="h-4 w-4 fill-amber-500 text-amber-500" />
+                <div className="p-1 rounded bg-[#FEFCE8] text-[#854D0E]">
+                  <Zap className="h-4 w-4 fill-[#FFED00] text-black" />
                 </div>
-                <h3 className="text-base font-black tracking-tight text-slate-900 font-display">
+                <h3 className="text-[16px] font-semibold tracking-tight text-black font-sans">
                   Quick Login Role Switcher
                 </h3>
               </div>
-              <p className="text-xs text-slate-500 mt-1">
-                Click any role card below to <span className="font-semibold text-slate-900">instantly auto-login</span> into that department's console.
+              <p className="text-[13px] text-[#525252] mt-1">
+                Click any role card below to <span className="font-semibold text-black">instantly auto-login</span> into that department's console.
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full text-[11px] font-mono text-slate-600 self-start sm:self-auto">
-              <Sparkles className="h-3 w-3 text-amber-500" />
+            <div className="flex items-center gap-1.5 bg-[#F5F5F5] px-2.5 py-1 rounded-[6px] text-[11px] font-mono text-[#525252] self-start sm:self-auto border border-[#E5E5E5]">
+              <Sparkles className="h-3 w-3 text-[#854D0E]" />
               <span>1-Click Auto Login</span>
             </div>
           </div>
@@ -709,44 +701,44 @@ function AuthContainer() {
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => handleAutoLogin(acc)}
-                  className={`group relative p-3.5 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between ${
+                  className={`group relative p-3 rounded-[8px] border text-left transition-all duration-150 flex flex-col justify-between ${
                     isCurrentLoggingIn
-                      ? 'border-slate-900 bg-amber-50 ring-2 ring-slate-900 shadow-md'
+                      ? 'border-black bg-[#FEFCE8] ring-1 ring-black shadow-xs'
                       : isSelected
-                      ? 'border-slate-900 bg-slate-50 ring-1 ring-slate-900'
-                      : 'border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50/70 hover:shadow-xs'
+                      ? 'border-black bg-[#F5F5F5] ring-1 ring-black'
+                      : 'border-[#E5E5E5] bg-white hover:border-black hover:bg-[#F5F5F5] hover:shadow-xs'
                   } ${isSubmitting && !isCurrentLoggingIn ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="font-bold text-xs text-slate-900 group-hover:text-slate-950 truncate">
+                      <span className="font-semibold text-[13px] text-black group-hover:text-black truncate">
                         {acc.title}
                       </span>
                       <span
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider ${acc.badgeColor}`}
+                        className={`text-[9px] font-mono font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wider ${acc.badgeColor}`}
                       >
                         {acc.badge}
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-slate-500 line-clamp-1 mb-2">
+                    <p className="text-[12px] text-[#525252] line-clamp-1 mb-2">
                       {acc.description}
                     </p>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 mt-auto">
-                    <span className="text-[10px] font-mono text-slate-400 truncate">
+                  <div className="pt-2 border-t border-[#E5E5E5] flex items-center justify-between gap-2 mt-auto">
+                    <span className="text-[11px] font-mono text-[#737373] truncate">
                       {acc.email}
                     </span>
 
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-700 group-hover:text-slate-950 flex-shrink-0">
+                    <div className="flex items-center gap-1 text-[11px] font-medium text-black flex-shrink-0">
                       {isCurrentLoggingIn ? (
-                        <span className="flex items-center gap-1 text-amber-700">
+                        <span className="flex items-center gap-1 text-[#854D0E]">
                           <Loader2 className="h-3 w-3 animate-spin" />
                           <span>Logging in...</span>
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-slate-600 group-hover:text-slate-900">
+                        <span className="flex items-center gap-1 group-hover:translate-x-0.5 transition-transform text-[#525252] group-hover:text-black">
                           <span>Login</span>
                           <ArrowRight className="h-3 w-3" />
                         </span>
@@ -758,12 +750,12 @@ function AuthContainer() {
             })}
           </div>
 
-          <div className="mt-4 pt-3.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+          <div className="mt-4 pt-3.5 border-t border-[#E5E5E5] flex items-center justify-between text-[12px] text-[#525252]">
             <div className="flex items-center gap-1.5">
-              <Compass className="h-3.5 w-3.5 text-slate-400" />
-              <span>Default Dev Password: <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-bold">{DEFAULT_DEV_PASSWORD}</code></span>
+              <Compass className="h-3.5 w-3.5 text-[#737373]" />
+              <span>Default Dev Password: <code className="font-mono bg-[#F5F5F5] border border-[#E5E5E5] px-1.5 py-0.5 rounded text-black font-semibold">{DEFAULT_DEV_PASSWORD}</code></span>
             </div>
-            <span className="hidden sm:inline text-slate-400 font-mono text-[10px]">
+            <span className="hidden sm:inline text-[#737373] font-mono text-[10px]">
               Ready for immediate testing
             </span>
           </div>
@@ -775,23 +767,23 @@ function AuthContainer() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#F8FAFC] flex flex-col justify-center py-10 sm:px-6 lg:px-8 blueprint-grid">
+    <div className="min-h-screen bg-[#F8F8F8] flex flex-col justify-center py-10 sm:px-6 lg:px-8 blueprint-grid">
       {/* Top Header & Branding */}
       <div className="sm:mx-auto sm:w-full sm:max-w-4xl text-center mb-8">
         <Link href="/" className="inline-flex items-center gap-3 group">
-          <div className="h-12 w-12 rounded-2xl bg-[#FFED00] text-slate-950 flex items-center justify-center font-black border border-[#E3A008]/40 shadow-xs transition-transform group-hover:scale-105">
-            <Printer className="h-6 w-6 stroke-[2.5]" />
+          <div className="h-10 w-10 rounded-[8px] bg-[#FFED00] text-black flex items-center justify-center font-bold border border-neutral-300 shadow-xs transition-transform group-hover:scale-105">
+            <Printer className="h-5 w-5" />
           </div>
           <div className="text-left">
             <div className="flex items-center gap-1.5">
-              <span className="text-2xl font-black tracking-tight text-slate-900 font-display">
+              <span className="text-[20px] font-semibold tracking-tight text-black font-sans">
                 PRINT BAZZAR
               </span>
-              <span className="bg-slate-900 text-[#FFED00] text-[10px] font-mono font-black px-1.5 py-0.5 rounded">
+              <span className="bg-black text-[#FFED00] text-[10px] font-mono font-bold px-1.5 py-0.5 rounded">
                 2.0
               </span>
             </div>
-            <p className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">
+            <p className="text-[10px] font-mono font-semibold text-[#737373] uppercase tracking-widest">
               Unified Authentication Hub
             </p>
           </div>
@@ -802,7 +794,7 @@ export default function LoginPage() {
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <Suspense
           fallback={
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs font-mono text-slate-500">
+            <div className="bg-white rounded-[8px] border border-[#E5E5E5] p-8 text-center text-xs font-mono text-[#737373]">
               Loading Authentication Hub...
             </div>
           }
@@ -813,3 +805,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

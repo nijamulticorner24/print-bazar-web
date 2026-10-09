@@ -20,7 +20,6 @@ import {
   RiFlashlightLine,
   RiLayoutGridLine,
   RiListCheck2,
-  RiSparklingLine,
   RiFilePdfLine,
   RiPaletteLine,
   RiSettings4Line,
@@ -159,7 +158,7 @@ export default function OrderAssignmentCenterPage() {
   // Selection state for Bulk Assignment
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
-  // Drawer state
+  // Drawer state - supports explicit DESIGN or PRODUCTION assignment
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerOrder, setDrawerOrder] = useState<any | null>(null);
   const [drawerType, setDrawerType] = useState<'DESIGN' | 'PRODUCTION'>('DESIGN');
@@ -284,8 +283,6 @@ export default function OrderAssignmentCenterPage() {
             bo.assignments?.find((a: any) => a.taskType === 'DESIGN' && a.status === 'ACTIVE')?.assignedUser ||
             null;
 
-          const activeAssignee = prodAssignee || designAssignee || null;
-
           return {
             id: bo.id,
             orderNumber: bo.orderNumber,
@@ -331,7 +328,6 @@ export default function OrderAssignmentCenterPage() {
             dueDate: formatDate(bo.promisedDeliveryDate || bo.createdAt),
             dueDaysLeft: 5,
             isUrgent: bo.priority === 'URGENT',
-            assignedTo: activeAssignee,
             assignedDesigner: designAssignee,
             assignedOperator: prodAssignee,
             status: bo.status,
@@ -403,10 +399,15 @@ export default function OrderAssignmentCenterPage() {
 
   const kpiMetrics = useMemo(() => {
     const total = orders.length;
-    const designReq = orders.filter((o) => (o.artworkState === 'DESIGN_REQUIRED' || o.artworkState === 'NOT_READY') && !o.assignedTo).length;
-    const readyProd = orders.filter((o) => o.artworkState === 'READY' && !o.assignedTo).length;
-    const needsAction = orders.filter((o) => !o.assignedTo).length;
-    const inProgress = orders.filter((o) => o.assignedTo || ['PRINTING', 'FINISHING', 'QUALITY_CHECK'].includes(o.status)).length;
+    // Needs Action: orders where either Designer or Production Operator is unassigned
+    const needsAction = orders.filter((o) => !o.assignedDesigner || !o.assignedOperator).length;
+    // Design Required: orders without designer or with design required artwork state
+    const designReq = orders.filter((o) => !o.assignedDesigner && (o.artworkState === 'DESIGN_REQUIRED' || o.artworkState === 'NOT_READY')).length;
+    // Ready for Production: artwork ready but operator not assigned
+    const readyProd = orders.filter((o) => !o.assignedOperator && o.artworkState === 'READY').length;
+    // In Progress: active with either designer or operator
+    const inProgress = orders.filter((o) => (o.assignedDesigner || o.assignedOperator) && !['DELIVERED', 'CANCELLED', 'ON_HOLD'].includes(o.status)).length;
+    // Blocked: ON_HOLD or blocked
     const blocked = orders.filter((o) => o.artworkState === 'BLOCKED' || o.status === 'ON_HOLD').length;
 
     return {
@@ -425,13 +426,13 @@ export default function OrderAssignmentCenterPage() {
     return orders.filter((o) => {
       // Tab filter
       if (activeTab === 'NEEDS_ACTION') {
-        if (o.assignedTo) return false;
+        if (o.assignedDesigner && o.assignedOperator) return false;
       } else if (activeTab === 'DESIGN_REQUIRED') {
-        if (o.artworkState !== 'DESIGN_REQUIRED' && o.artworkState !== 'NOT_READY') return false;
+        if (o.artworkState !== 'DESIGN_REQUIRED' && o.artworkState !== 'NOT_READY' && o.assignedDesigner) return false;
       } else if (activeTab === 'READY_FOR_PRODUCTION') {
         if (o.artworkState !== 'READY') return false;
       } else if (activeTab === 'IN_PROGRESS') {
-        if (!o.assignedTo && !['PRINTING', 'FINISHING', 'QUALITY_CHECK'].includes(o.status)) return false;
+        if (!o.assignedDesigner && !o.assignedOperator && !['PRINTING', 'FINISHING', 'QUALITY_CHECK'].includes(o.status)) return false;
       } else if (activeTab === 'BLOCKED') {
         if (o.artworkState !== 'BLOCKED' && o.status !== 'ON_HOLD') return false;
       }
@@ -467,12 +468,11 @@ export default function OrderAssignmentCenterPage() {
     setStaffSearch('');
     setAssignmentNotes('');
 
-    // Pre-select current assignee or recommended
     const staffList = type === 'DESIGN' ? designers : operators;
     const currentAssignedId =
       type === 'DESIGN'
-        ? order.assignedDesigner?.id || order.assignedTo?.id
-        : order.assignedOperator?.id || order.assignedTo?.id;
+        ? order.assignedDesigner?.id
+        : order.assignedOperator?.id;
 
     const matchedStaff = currentAssignedId ? staffList.find((s) => s.id === currentAssignedId) : null;
     const rec = matchedStaff || staffList.find((s) => s.recommended) || staffList[0];
@@ -521,21 +521,20 @@ export default function OrderAssignmentCenterPage() {
     setIsSubmitting(true);
 
     const staffList = drawerType === 'DESIGN' ? designers : operators;
-    const targetStaff = staffList.find((s) => s.id === selectedStaffId);
-    const staffName = targetStaff?.fullName || 'Assigned Staff';
-    const isReassign = Boolean(drawerOrder.assignedTo);
+    const chosenStaff = staffList.find((s) => s.id === selectedStaffId);
+    const staffName = chosenStaff?.fullName || 'Assigned Staff';
 
     try {
       if (drawerType === 'DESIGN') {
         await api.assignDesigner(drawerOrder.id, {
           designerId: selectedStaffId,
-          reason: assignmentNotes || `${isReassign ? 'Reassigned' : 'Assigned'} to ${staffName} from Order Assignment Center`,
-        }).catch(() => null);
+          reason: assignmentNotes || `Prepress Designer assignment by Operations Coordinator`,
+        });
       } else {
         await api.assignProductionOperator(drawerOrder.id, {
           operatorId: selectedStaffId,
-          reason: assignmentNotes || `${isReassign ? 'Reassigned' : 'Assigned'} to ${staffName} from Order Assignment Center`,
-        }).catch(() => null);
+          reason: assignmentNotes || `Production Operator assignment by Operations Coordinator`,
+        });
       }
 
       // Optimistic local state update
@@ -544,28 +543,40 @@ export default function OrderAssignmentCenterPage() {
           o.id === drawerOrder.id
             ? {
                 ...o,
-                assignedTo: targetStaff,
-                assignedOperator: drawerType === 'PRODUCTION' ? targetStaff : o.assignedOperator,
-                assignedDesigner: drawerType === 'DESIGN' ? targetStaff : o.assignedDesigner,
-                status: drawerType === 'DESIGN' ? 'DESIGN_REQUIRED' : 'PRODUCTION_QUEUE',
+                assignedDesigner: drawerType === 'DESIGN' && chosenStaff ? chosenStaff : o.assignedDesigner,
+                assignedOperator: drawerType === 'PRODUCTION' && chosenStaff ? chosenStaff : o.assignedOperator,
+                status:
+                  drawerType === 'DESIGN'
+                    ? 'DESIGN_REQUIRED'
+                    : 'PRODUCTION_QUEUE',
               }
-            : o,
-        ),
+            : o
+        )
       );
 
       setLiveToast(
-        isReassign
-          ? `🔄 Successfully updated assignment for #${drawerOrder.orderNumber} to ${staffName}`
-          : `✅ Successfully assigned #${drawerOrder.orderNumber} to ${staffName}`
+        drawerType === 'DESIGN'
+          ? `🎨 Assigned Prepress Designer: ${staffName} (#${drawerOrder.orderNumber})`
+          : `🖨️ Assigned Production Operator: ${staffName} (#${drawerOrder.orderNumber})`
       );
       setDrawerOpen(false);
       setDrawerOrder(null);
       await loadData();
     } catch (err: any) {
       console.error('Assignment error:', err);
-      alert(err.message || 'Failed to complete assignment.');
+      alert(err.message || 'Failed to complete operational assignment.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // ─── BULK ASSIGNMENT EXECUTION ─────────────────────────────────────────────
+
+  const handleBulkExecute = async (type: 'DESIGN' | 'PRODUCTION') => {
+    if (selectedOrderIds.length === 0) return;
+    const firstSelected = orders.find((o) => selectedOrderIds.includes(o.id));
+    if (firstSelected) {
+      handleOpenDrawer(firstSelected, type);
     }
   };
 
@@ -581,11 +592,11 @@ export default function OrderAssignmentCenterPage() {
 
   const handleToggleSelectOrder = (id: string) => {
     setSelectedOrderIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
-  // Selected staff object for dynamic button label
+  // Active selected staff object for dynamic button label
   const activeSelectedStaff = useMemo(() => {
     const list = drawerType === 'DESIGN' ? designers : operators;
     return list.find((s) => s.id === selectedStaffId);
@@ -649,14 +660,14 @@ export default function OrderAssignmentCenterPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
           <div>
             <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-slate-500 mb-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-              <span>OPERATIONS COMMAND</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              <span>OPERATIONS COORDINATION COMMAND</span>
             </div>
-            <h1 className="text-[26px] sm:text-[28px] font-bold text-slate-900 tracking-tight leading-none font-sans">
-              Order Assignment Center
+            <h1 className="text-[26px] sm:text-[28px] font-bold text-slate-900 tracking-tight leading-none font-sans flex items-center gap-2.5">
+              <span>Order Assignment Center</span>
             </h1>
             <p className="text-[13px] text-slate-500 mt-1.5 font-normal">
-              All orders come to Operations. Assign to Designer or Production based on artwork status.
+              Operations Coordinator workflow: Assign Prepress Designer or Assign Production Operator directly based on operational requirements.
             </p>
           </div>
 
@@ -714,13 +725,13 @@ export default function OrderAssignmentCenterPage() {
             onClick={() => setActiveTab('DESIGN_REQUIRED')}
             className={`p-4 rounded-xl border transition-all cursor-pointer shadow-xs ${
               activeTab === 'DESIGN_REQUIRED'
-                ? 'bg-red-50/90 border-red-300 ring-2 ring-red-500/20'
+                ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-500/20'
                 : 'bg-white border-slate-200 hover:border-slate-300'
             }`}
           >
-            <div className="flex items-center gap-2 text-red-600 mb-2">
-              <div className="p-1.5 bg-red-50 rounded-lg">
-                <RiPaletteLine className="h-4 w-4 text-red-500" />
+            <div className="flex items-center gap-2 text-amber-600 mb-2">
+              <div className="p-1.5 bg-amber-100 rounded-lg">
+                <RiPaletteLine className="h-4 w-4 text-amber-600" />
               </div>
               <span className="text-[24px] font-bold font-sans text-slate-900 leading-none">
                 {kpiMetrics.designRequired}
@@ -937,15 +948,6 @@ export default function OrderAssignmentCenterPage() {
               <option value="DUE_SOON">Due Soon (≤ 48h)</option>
               <option value="OVERDUE">Overdue</option>
             </select>
-
-            {/* Filters Button */}
-            <button
-              type="button"
-              className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-1.5"
-            >
-              <RiFilter3Line className="h-3.5 w-3.5 text-slate-500" />
-              <span>Filters</span>
-            </button>
           </div>
 
           {/* View Mode Toggle: Card View vs Table View */}
@@ -977,13 +979,13 @@ export default function OrderAssignmentCenterPage() {
 
         {/* ─── 5. BULK ASSIGNMENT FLOATING BAR ────────────────────────────── */}
         {selectedOrderIds.length > 0 && (
-          <div className="bg-slate-900 text-white px-5 py-3 rounded-xl shadow-lg flex items-center justify-between text-xs font-semibold animate-in fade-in">
+          <div className="bg-slate-900 text-white px-5 py-3 rounded-xl shadow-lg flex flex-wrap items-center justify-between gap-3 text-xs font-semibold animate-in fade-in">
             <div className="flex items-center gap-3">
               <span className="bg-[#FFED00] text-slate-950 font-black px-2 py-0.5 rounded text-[11px]">
                 {selectedOrderIds.length} ORDERS SELECTED
               </span>
               <span className="text-slate-300">
-                Bulk assign to streamline operational routing
+                Operations Coordinator Bulk Dispatch
               </span>
             </div>
 
@@ -991,28 +993,24 @@ export default function OrderAssignmentCenterPage() {
               <Button
                 variant="outline"
                 size="xs"
-                onClick={() => {
-                  const firstSelected = orders.find((o) => selectedOrderIds.includes(o.id));
-                  if (firstSelected) handleOpenDrawer(firstSelected, 'DESIGN');
-                }}
-                className="bg-red-600 hover:bg-red-700 text-white border-none font-bold"
+                onClick={() => handleBulkExecute('DESIGN')}
+                className="bg-amber-600 hover:bg-amber-700 text-white border-none font-bold cursor-pointer"
               >
+                <RiPaletteLine className="h-3.5 w-3.5 mr-1" />
                 <span>Bulk Assign Designer</span>
               </Button>
               <Button
                 variant="primary"
                 size="xs"
-                onClick={() => {
-                  const firstSelected = orders.find((o) => selectedOrderIds.includes(o.id));
-                  if (firstSelected) handleOpenDrawer(firstSelected, 'PRODUCTION');
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white border-none font-bold"
+                onClick={() => handleBulkExecute('PRODUCTION')}
+                className="bg-blue-600 hover:bg-blue-700 text-white border-none font-bold cursor-pointer"
               >
-                <span>Bulk Assign Production Operator</span>
+                <RiPrinterLine className="h-3.5 w-3.5 mr-1" />
+                <span>Bulk Assign Production</span>
               </Button>
               <button
                 onClick={() => setSelectedOrderIds([])}
-                className="text-slate-400 hover:text-white text-xs underline ml-2"
+                className="text-slate-400 hover:text-white text-xs underline ml-2 cursor-pointer"
               >
                 Clear Selection
               </button>
@@ -1022,7 +1020,7 @@ export default function OrderAssignmentCenterPage() {
 
         {/* ─── 6. MAIN ORDER QUEUE: COMPACT HORIZONTAL CARDS ───────────────── */}
         {viewMode === 'card' ? (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {filteredOrders.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-xs text-slate-400">
                 <RiFileListLine className="h-10 w-10 text-slate-300 mx-auto mb-2" />
@@ -1033,17 +1031,16 @@ export default function OrderAssignmentCenterPage() {
               filteredOrders.map((order) => {
                 const isChecked = selectedOrderIds.includes(order.id);
                 const isArtReady = order.artworkState === 'READY';
-                const isDesignReq = order.artworkState === 'DESIGN_REQUIRED' || order.artworkState === 'NOT_READY';
 
                 return (
                   <div
                     key={order.id}
-                    className={`bg-white border rounded-xl p-3.5 shadow-xs hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                    className={`bg-white border rounded-xl p-4 shadow-xs hover:border-slate-300 transition-all flex flex-col xl:flex-row xl:items-center justify-between gap-4 ${
                       isChecked ? 'border-blue-400 bg-blue-50/20' : 'border-slate-200/90'
                     }`}
                   >
                     {/* Left: Checkbox + Product Thumbnail + Order Info */}
-                    <div className="flex items-center gap-3.5 min-w-[320px]">
+                    <div className="flex items-center gap-3.5 min-w-[280px]">
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -1061,6 +1058,11 @@ export default function OrderAssignmentCenterPage() {
                           >
                             #{order.orderNumber}
                           </Link>
+                          {order.priority === 'URGENT' && (
+                            <span className="bg-red-100 text-red-700 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border border-red-200">
+                              URGENT
+                            </span>
+                          )}
                         </div>
                         <div className="font-semibold text-[13px] text-slate-800 leading-tight mt-0.5">
                           {order.customerName}
@@ -1071,194 +1073,151 @@ export default function OrderAssignmentCenterPage() {
                         {/* Specs Line */}
                         <div className="text-[11px] font-mono text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
                           <span>{order.specs.quantity.toLocaleString()} pcs</span>
-                          <span>|</span>
+                          <span>•</span>
                           <span>{order.specs.dimensions}</span>
-                          <span>|</span>
-                          <span>{order.specs.sides}</span>
-                          <span>|</span>
+                          <span>•</span>
                           <span>{order.specs.substrate}</span>
                         </div>
                       </div>
                     </div>
 
                     {/* Middle Column: Artwork Status & Proof Preview */}
-                    <div className="flex-1 min-w-[220px] md:px-3">
+                    <div className="min-w-[200px] xl:max-w-[240px]">
                       {isArtReady ? (
                         <div>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                             ARTWORK READY
                           </span>
-                          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-700 font-medium">
-                            <RiFilePdfLine className="h-4 w-4 text-blue-600 shrink-0" />
-                            <span className="font-mono text-[11px] text-slate-800 truncate max-w-[150px]">
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-700 font-medium">
+                            <RiFilePdfLine className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                            <span className="font-mono text-[11px] text-slate-800 truncate max-w-[130px]">
                               {order.artworkFile?.fileName}
                             </span>
-                            <span className="text-[10px] font-mono font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded">
-                              {order.artworkFile?.version}
-                            </span>
-                            <span className="text-[11px] text-slate-400 font-mono">
-                              {order.artworkFile?.fileSize}
-                            </span>
                           </div>
-                          <div className="mt-1">
+                          <div className="mt-0.5">
                             <button
                               type="button"
                               onClick={() => handleOpenArtwork(order)}
                               className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1 cursor-pointer"
                             >
                               <RiEyeLine className="h-3 w-3" />
-                              <span>View Artwork</span>
+                              <span>Inspect Proof</span>
                             </button>
-                          </div>
-                        </div>
-                      ) : order.artworkState === 'DESIGN_REQUIRED' ? (
-                        <div>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-red-50 text-red-700 border border-red-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                            DESIGN REQUIRED
-                          </span>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            {order.artworkMessage}
-                          </p>
-                          <div className="mt-1">
-                            <Link
-                              href={`/operations/orders/${order.id}`}
-                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              View Requirements
-                            </Link>
                           </div>
                         </div>
                       ) : (
                         <div>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-red-50 text-red-700 border border-red-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                            ARTWORK NOT READY
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            {order.artworkState === 'DESIGN_REQUIRED' ? 'DESIGN REQUIRED' : 'ARTWORK PENDING'}
                           </span>
-                          <p className="text-[11px] text-slate-500 mt-1">
+                          <p className="text-[11px] text-slate-500 mt-1 truncate max-w-[200px]">
                             {order.artworkMessage}
                           </p>
-                          <div className="mt-1">
-                            <Link
-                              href={`/operations/orders/${order.id}`}
-                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-                            >
-                              View Requirements
-                            </Link>
-                          </div>
                         </div>
                       )}
                     </div>
 
-                    {/* Priority Column */}
-                    <div className="min-w-[90px]">
-                      <span className="text-[10px] font-mono uppercase text-slate-400 block font-semibold">
-                        Priority
-                      </span>
-                      <span
-                        className={`inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase ${
-                          order.priority === 'HIGH' || order.priority === 'URGENT'
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : order.priority === 'LOW'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            order.priority === 'HIGH' || order.priority === 'URGENT'
-                              ? 'bg-red-500'
-                              : order.priority === 'LOW'
-                              ? 'bg-emerald-500'
-                              : 'bg-blue-500'
-                          }`}
-                        />
-                        {order.priority}
-                      </span>
-                    </div>
-
-                    {/* Due Date / SLA Column */}
+                    {/* SLA Column */}
                     <div className="min-w-[110px]">
                       <span className="text-[10px] font-mono uppercase text-slate-400 block font-semibold">
-                        Due Date
+                        Promised Due
                       </span>
                       <div className="text-xs font-semibold text-slate-800 flex items-center gap-1 mt-0.5 font-mono">
                         <RiCalendarLine className="h-3.5 w-3.5 text-slate-400" />
                         <span>{order.dueDate}</span>
                       </div>
-                      <span
-                        className={`text-[11px] font-mono font-bold block mt-0.5 ${
-                          order.dueDaysLeft <= 5 || order.priority === 'HIGH'
-                            ? 'text-red-600'
-                            : 'text-slate-500'
-                        }`}
-                      >
-                        {order.dueDaysLeft} days left
+                      <span className="text-[10px] font-mono text-slate-500 block mt-0.5">
+                        {order.priority} Priority
                       </span>
                     </div>
 
-                    {/* Right: Single Contextual Action Button or Assigned Status */}
-                    <div className="flex items-center gap-2 shrink-0 justify-end min-w-[220px]">
-                      {order.assignedTo ? (
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 shadow-2xs">
-                            <div className="h-6 w-6 rounded-full bg-slate-900 text-[#FFED00] flex items-center justify-center font-bold text-[10px] shrink-0">
-                              {order.assignedTo.fullName
-                                ?.split(' ')
-                                .map((n: string) => n[0])
-                                .slice(0, 2)
-                                .join('') || 'OP'}
+                    {/* Right: Operational Assignments (Prepress Design & Production Operator) */}
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0 justify-end min-w-[340px] bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80">
+                      {/* 1. Prepress Designer Allocation */}
+                      <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-white border border-slate-200 shadow-2xs min-w-[150px]">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`h-7 w-7 rounded-md flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                              order.assignedDesigner
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-slate-100 text-slate-400'
+                            }`}
+                          >
+                            <RiPaletteLine className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0 pr-1 text-left">
+                            <div className="text-[9px] font-mono text-slate-400 font-bold uppercase leading-none">
+                              Designer
                             </div>
-                            <div className="min-w-0 text-left">
-                              <div className="text-[9px] font-mono text-slate-400 font-semibold uppercase leading-tight">
-                                {order.assignedDesigner ? 'Designer' : 'Operator'}
-                              </div>
-                              <div className="text-xs font-bold text-slate-900 truncate max-w-[130px] leading-tight">
-                                {order.assignedTo.fullName}
-                              </div>
+                            <div className="text-xs font-bold text-slate-800 truncate max-w-[85px] leading-tight mt-0.5">
+                              {order.assignedDesigner ? (
+                                order.assignedDesigner.fullName
+                              ) : (
+                                <span className="text-slate-400 font-normal">None</span>
+                              )}
                             </div>
                           </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleOpenDrawer(
-                                order,
-                                order.assignedDesigner ? 'DESIGN' : 'PRODUCTION',
-                              )
-                            }
-                            className="h-[38px] px-3 rounded-lg border border-slate-300 hover:bg-slate-100 hover:border-slate-400 text-slate-700 font-semibold text-xs transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                            title="Change Assignee"
-                          >
-                            <RiRefreshLine className="h-3.5 w-3.5 text-slate-500" />
-                            <span>Change</span>
-                          </button>
                         </div>
-                      ) : isDesignReq ? (
+
                         <button
                           type="button"
                           onClick={() => handleOpenDrawer(order, 'DESIGN')}
-                          className="h-[38px] px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                          className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer shrink-0 ${
+                            order.assignedDesigner
+                              ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
+                              : 'bg-amber-500 hover:bg-amber-600 text-white shadow-2xs'
+                          }`}
                         >
-                          <span>Assign Designer</span>
-                          <RiArrowRightLine className="h-3.5 w-3.5" />
+                          {order.assignedDesigner ? 'Change' : 'Assign'}
                         </button>
-                      ) : (
+                      </div>
+
+                      {/* 2. Production Operator Allocation */}
+                      <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-white border border-slate-200 shadow-2xs min-w-[150px]">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`h-7 w-7 rounded-md flex items-center justify-center font-bold text-[10px] shrink-0 ${
+                              order.assignedOperator
+                                ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                                : 'bg-slate-100 text-slate-400'
+                            }`}
+                          >
+                            <RiPrinterLine className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0 pr-1 text-left">
+                            <div className="text-[9px] font-mono text-slate-400 font-bold uppercase leading-none">
+                              Operator
+                            </div>
+                            <div className="text-xs font-bold text-slate-800 truncate max-w-[85px] leading-tight mt-0.5">
+                              {order.assignedOperator ? (
+                                order.assignedOperator.fullName
+                              ) : (
+                                <span className="text-slate-400 font-normal">None</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
                         <button
                           type="button"
                           onClick={() => handleOpenDrawer(order, 'PRODUCTION')}
-                          className="h-[38px] px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                          className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer shrink-0 ${
+                            order.assignedOperator
+                              ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xs'
+                          }`}
                         >
-                          <span>Assign Production Operator</span>
+                          {order.assignedOperator ? 'Change' : 'Assign'}
                         </button>
-                      )}
+                      </div>
 
                       {/* Three-Dot Menu */}
                       <Link
                         href={`/operations/orders/${order.id}`}
-                        className="h-[38px] w-[38px] flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors"
-                        title="Order Actions"
+                        className="h-[34px] w-[34px] flex items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-500 transition-colors shrink-0"
+                        title="Order Details & Operational Timeline"
                       >
                         <RiMoreFill className="h-4 w-4" />
                       </Link>
@@ -1270,8 +1229,8 @@ export default function OrderAssignmentCenterPage() {
           </div>
         ) : (
           /* ─── ALTERNATIVE TABLE VIEW ─────────────────────────────────────── */
-          <div className="bg-white border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
-            <table className="w-full text-left text-xs border-collapse">
+          <div className="bg-white border border-slate-200/90 rounded-xl shadow-xs overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse min-w-[960px]">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 font-mono text-[11px] bg-slate-50/70">
                   <th className="py-3 px-3 w-8">
@@ -1282,20 +1241,19 @@ export default function OrderAssignmentCenterPage() {
                       className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 cursor-pointer"
                     />
                   </th>
-                  <th className="py-3 px-3">ORDER & DATE</th>
-                  <th className="py-3 px-3">CUSTOMER & PRODUCT</th>
-                  <th className="py-3 px-3">SPECIFICATIONS</th>
+                  <th className="py-3 px-3">ORDER & CUSTOMER</th>
+                  <th className="py-3 px-3">PRODUCT & SPECS</th>
                   <th className="py-3 px-3">ARTWORK STATUS</th>
-                  <th className="py-3 px-3">PRIORITY</th>
+                  <th className="py-3 px-3">DESIGNER (PREPRESS)</th>
+                  <th className="py-3 px-3">OPERATOR (PRODUCTION)</th>
                   <th className="py-3 px-3">DUE DATE</th>
-                  <th className="py-3 px-3 text-right">NEXT ACTION</th>
+                  <th className="py-3 px-3 text-right">ACTION</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-sans">
                 {filteredOrders.map((order) => {
                   const isChecked = selectedOrderIds.includes(order.id);
                   const isArtReady = order.artworkState === 'READY';
-                  const isDesignReq = order.artworkState === 'DESIGN_REQUIRED' || order.artworkState === 'NOT_READY';
 
                   return (
                     <tr key={order.id} className="hover:bg-slate-50/80 transition-colors">
@@ -1314,13 +1272,13 @@ export default function OrderAssignmentCenterPage() {
                         >
                           #{order.orderNumber}
                         </Link>
+                        <div className="font-semibold text-slate-800 text-[11px]">{order.customerName}</div>
                       </td>
                       <td className="py-3 px-3">
-                        <div className="font-semibold text-slate-900">{order.customerName}</div>
-                        <div className="text-[11px] text-slate-500">{order.productName}</div>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-[11px] text-slate-500">
-                        {order.specs.quantity.toLocaleString()} pcs • {order.specs.dimensions} • {order.specs.substrate}
+                        <div className="font-medium text-slate-900">{order.productName}</div>
+                        <div className="font-mono text-[10px] text-slate-400">
+                          {order.specs.quantity.toLocaleString()} pcs • {order.specs.dimensions}
+                        </div>
                       </td>
                       <td className="py-3 px-3">
                         {isArtReady ? (
@@ -1328,65 +1286,84 @@ export default function OrderAssignmentCenterPage() {
                             type="button"
                             onClick={() => handleOpenArtwork(order)}
                             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition cursor-pointer"
-                            title="Click to view artwork"
+                            title="Click to view artwork proof"
                           >
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                             <RiEyeLine className="h-3 w-3 text-emerald-700" />
                             <span>READY</span>
                           </button>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-50 text-red-800 border border-red-200">
-                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                            {order.artworkState === 'DESIGN_REQUIRED' ? 'DESIGN REQUIRED' : 'NOT READY'}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            {order.artworkState === 'DESIGN_REQUIRED' ? 'DESIGN REQ' : 'PENDING'}
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-3 font-mono text-[10px] font-bold">
-                        {order.priority}
+                      {/* Designer Cell */}
+                      <td className="py-3 px-3">
+                        {order.assignedDesigner ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold">
+                              <RiPaletteLine className="h-3 w-3 text-amber-600" />
+                              <span className="truncate max-w-[100px]">{order.assignedDesigner.fullName}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDrawer(order, 'DESIGN')}
+                              className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => handleOpenDrawer(order, 'DESIGN')}
+                            className="bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300 text-[10px] font-bold cursor-pointer"
+                          >
+                            + Assign Designer
+                          </Button>
+                        )}
+                      </td>
+                      {/* Operator Cell */}
+                      <td className="py-3 px-3">
+                        {order.assignedOperator ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-900 text-[11px] font-semibold">
+                              <RiPrinterLine className="h-3 w-3 text-blue-600" />
+                              <span className="truncate max-w-[100px]">{order.assignedOperator.fullName}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDrawer(order, 'PRODUCTION')}
+                              className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            onClick={() => handleOpenDrawer(order, 'PRODUCTION')}
+                            className="bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300 text-[10px] font-bold cursor-pointer"
+                          >
+                            + Assign Operator
+                          </Button>
+                        )}
                       </td>
                       <td className="py-3 px-3 font-mono text-[11px] text-slate-600">
                         {order.dueDate}
                       </td>
                       <td className="py-3 px-3 text-right">
-                        {order.assignedTo ? (
-                          <div className="inline-flex items-center gap-1.5 justify-end">
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-slate-800 text-[11px] font-bold font-sans">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              <span className="truncate max-w-[120px]">{order.assignedTo.fullName}</span>
-                            </span>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() =>
-                                handleOpenDrawer(
-                                  order,
-                                  order.assignedDesigner ? 'DESIGN' : 'PRODUCTION',
-                                )
-                              }
-                              className="text-[11px] font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
-                            >
-                              <span>Change</span>
-                            </Button>
-                          </div>
-                        ) : isDesignReq ? (
-                          <Button
-                            variant="primary"
-                            size="xs"
-                            onClick={() => handleOpenDrawer(order, 'DESIGN')}
-                            className="bg-red-600 hover:bg-red-700 text-white font-bold cursor-pointer"
-                          >
-                            <span>Assign Designer</span>
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="primary"
-                            size="xs"
-                            onClick={() => handleOpenDrawer(order, 'PRODUCTION')}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold cursor-pointer"
-                          >
-                            <span>Assign Operator</span>
-                          </Button>
-                        )}
+                        <Link
+                          href={`/operations/orders/${order.id}`}
+                          className="inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 font-semibold text-xs transition"
+                          title="View Order Details"
+                        >
+                          <RiMoreFill className="h-4 w-4" />
+                        </Link>
                       </td>
                     </tr>
                   );
@@ -1397,35 +1374,72 @@ export default function OrderAssignmentCenterPage() {
         )}
       </div>
 
-      {/* ─── 7. RIGHT-SIDE CONTEXTUAL ASSIGNMENT DRAWER ──────────────────── */}
+      {/* ─── 7. RIGHT-SIDE CONTEXTUAL ASSIGNMENT DRAWER ────────────────────── */}
       {drawerOpen && drawerOrder && (
         <div className="fixed inset-0 z-50 flex justify-end">
           {/* Backdrop overlay */}
           <div
-            className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
             onClick={() => !isSubmitting && setDrawerOpen(false)}
           />
 
           {/* Drawer Body */}
-          <div className="relative w-full max-w-[440px] bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between z-10 animate-in slide-in-from-right duration-200 select-none">
+          <div className="relative w-full max-w-[460px] bg-white h-full shadow-2xl border-l border-slate-200 flex flex-col justify-between z-10 animate-in slide-in-from-right duration-200 select-none">
             {/* Drawer Top Header */}
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900">
-                {drawerOrder.assignedTo
-                  ? drawerType === 'DESIGN'
-                    ? 'Change Assigned Designer'
-                    : 'Change Production Operator'
-                  : drawerType === 'DESIGN'
-                  ? 'Assign Designer'
-                  : 'Assign Production Operator'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => !isSubmitting && setDrawerOpen(false)}
-                className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
-              >
-                <RiCloseLine className="h-5 w-5" />
-              </button>
+            <div className="p-5 border-b border-slate-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                    Operations Dispatch Control
+                  </span>
+                  <h2 className="text-base font-bold text-slate-900">
+                    {drawerType === 'DESIGN' ? 'Assign Prepress Designer' : 'Assign Production Operator'}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isSubmitting && setDrawerOpen(false)}
+                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition cursor-pointer"
+                >
+                  <RiCloseLine className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Drawer Mode Switcher Tabs */}
+              <div className="mt-4 flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrawerType('DESIGN');
+                    const rec = designers.find((d) => d.id === drawerOrder.assignedDesigner?.id) || designers.find((d) => d.recommended) || designers[0];
+                    setSelectedStaffId(rec?.id || '');
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    drawerType === 'DESIGN'
+                      ? 'bg-white text-amber-950 shadow-xs border border-amber-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <RiPaletteLine className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Prepress Designer</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrawerType('PRODUCTION');
+                    const rec = operators.find((o) => o.id === drawerOrder.assignedOperator?.id) || operators.find((o) => o.recommended) || operators[0];
+                    setSelectedStaffId(rec?.id || '');
+                  }}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                    drawerType === 'PRODUCTION'
+                      ? 'bg-white text-blue-950 shadow-xs border border-blue-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <RiPrinterLine className="h-3.5 w-3.5 text-blue-600" />
+                  <span>Production Operator</span>
+                </button>
+              </div>
             </div>
 
             {/* Scrollable Content */}
@@ -1444,85 +1458,32 @@ export default function OrderAssignmentCenterPage() {
                     {drawerOrder.productName}
                   </div>
                   <div className="text-[10px] font-mono text-slate-400 mt-1">
-                    {drawerOrder.specs.quantity.toLocaleString()} pcs | {drawerOrder.specs.dimensions} | {drawerOrder.specs.sides} | {drawerOrder.specs.substrate}
+                    {drawerOrder.specs.quantity.toLocaleString()} pcs • {drawerOrder.specs.dimensions} • {drawerOrder.specs.substrate}
                   </div>
                 </div>
               </div>
 
-              {/* Current Assignee Banner if Already Assigned */}
-              {drawerOrder.assignedTo && (
-                <div className="bg-slate-900 text-white rounded-xl p-3 flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="h-8 w-8 rounded-full bg-[#FFED00] text-slate-950 flex items-center justify-center font-bold text-xs shrink-0">
-                      {drawerOrder.assignedTo.fullName
-                        ?.split(' ')
-                        .map((n: string) => n[0])
-                        .slice(0, 2)
-                        .join('') || 'ST'}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-mono font-bold text-[#FFED00] uppercase tracking-wider">
-                        Currently Assigned
-                      </div>
-                      <div className="text-xs font-bold text-white truncate">
-                        {drawerOrder.assignedTo.fullName}
-                      </div>
-                    </div>
+              {/* Current Status Overview Card */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-bold block">Assigned Designer</span>
+                  <div className="font-bold text-slate-900 text-xs truncate mt-0.5">
+                    {drawerOrder.assignedDesigner ? drawerOrder.assignedDesigner.fullName : <span className="text-slate-400 font-normal">Unassigned</span>}
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold">
-                    Active
-                  </span>
                 </div>
-              )}
-
-              {/* Artwork Status Alert Banner */}
-              {drawerType === 'DESIGN' ? (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2">
-                    <RiAlertLine className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-xs font-bold text-red-900">Artwork Not Ready</div>
-                      <div className="text-[11px] text-red-700 mt-0.5">
-                        {drawerOrder.artworkMessage || 'No approved artwork version found.'}
-                      </div>
-                    </div>
+                <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-[9px] font-mono text-slate-400 uppercase font-bold block">Assigned Operator</span>
+                  <div className="font-bold text-slate-900 text-xs truncate mt-0.5">
+                    {drawerOrder.assignedOperator ? drawerOrder.assignedOperator.fullName : <span className="text-slate-400 font-normal">Unassigned</span>}
                   </div>
-                  <Link
-                    href={`/operations/orders/${drawerOrder.id}`}
-                    className="px-2.5 py-1 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-[11px] font-semibold rounded-lg shrink-0 shadow-xs"
-                  >
-                    View Requirements
-                  </Link>
                 </div>
-              ) : (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-2">
-                    <RiCheckboxCircleLine className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-xs font-bold text-emerald-900">Artwork Ready & Approved</div>
-                      <div className="text-[11px] text-emerald-700 mt-0.5">
-                        {drawerOrder.artworkFile?.fileName || 'Print-ready file verified'} • {drawerOrder.specs.dimensions}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenArtwork(drawerOrder)}
-                    className="px-2.5 py-1 bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 border border-slate-200 hover:border-emerald-300 text-[11px] font-semibold rounded-lg shrink-0 shadow-xs inline-flex items-center gap-1 cursor-pointer transition"
-                  >
-                    <RiEyeLine className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>View Artwork</span>
-                  </button>
-                </div>
-              )}
+              </div>
 
               {/* Staff Person Selector Section */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-900 uppercase font-mono tracking-wider">
-                    {drawerType === 'DESIGN'
-                      ? drawerOrder.assignedTo ? 'Change Designer' : 'Select Designer'
-                      : drawerOrder.assignedTo ? 'Change Operator' : 'Select Production Operator'}
+                    {drawerType === 'DESIGN' ? 'Select Prepress Designer' : 'Select Production Operator'}
                   </h3>
                   <span className="text-[11px] text-slate-400 font-mono">
                     {drawerType === 'DESIGN' ? `${designers.length} Active` : `${operators.length} Active`}
@@ -1562,7 +1523,9 @@ export default function OrderAssignmentCenterPage() {
                           onClick={() => setSelectedStaffId(staff.id)}
                           className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                             isSelected
-                              ? 'border-blue-500 bg-blue-50/40 ring-1 ring-blue-500 shadow-xs'
+                              ? drawerType === 'DESIGN'
+                                ? 'border-amber-500 bg-amber-50/40 ring-1 ring-amber-500 shadow-xs'
+                                : 'border-blue-500 bg-blue-50/40 ring-1 ring-blue-500 shadow-xs'
                               : 'border-slate-200 hover:border-slate-300 bg-white'
                           }`}
                         >
@@ -1571,7 +1534,9 @@ export default function OrderAssignmentCenterPage() {
                             <div
                               className={`h-4 w-4 rounded-full border flex items-center justify-center shrink-0 ${
                                 isSelected
-                                  ? 'border-blue-600 bg-blue-600'
+                                  ? drawerType === 'DESIGN'
+                                    ? 'border-amber-600 bg-amber-600'
+                                    : 'border-blue-600 bg-blue-600'
                                   : 'border-slate-300 bg-white'
                               }`}
                             >
@@ -1668,11 +1633,11 @@ export default function OrderAssignmentCenterPage() {
                 className="flex-1 py-2 px-4 rounded-lg bg-[#FFED00] hover:bg-[#F2DE00] text-slate-950 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 border border-[#E3A008]/40 disabled:opacity-50 cursor-pointer"
               >
                 {isSubmitting ? (
-                  <span>Updating Assignment...</span>
-                ) : drawerOrder.assignedTo ? (
-                  <span>Reassign to {activeSelectedStaff?.fullName || 'Selected Staff'}</span>
+                  <span>Saving Assignment...</span>
+                ) : drawerType === 'DESIGN' ? (
+                  <span>Assign Designer: {activeSelectedStaff?.fullName || 'Staff Member'}</span>
                 ) : (
-                  <span>Assign to {activeSelectedStaff?.fullName || 'Staff Member'}</span>
+                  <span>Assign Operator: {activeSelectedStaff?.fullName || 'Staff Member'}</span>
                 )}
               </button>
             </div>
@@ -1731,13 +1696,11 @@ export default function OrderAssignmentCenterPage() {
               </button>
             </div>
 
-            {/* Modal Body: Split between High-Res Proof Sheet & Specs Sidebar */}
+            {/* Modal Body */}
             <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 min-h-0">
-              {/* Left Canvas Preview Area (8 Cols) */}
+              {/* Left Canvas Preview Area */}
               <div className="lg:col-span-8 bg-slate-950/60 p-6 flex flex-col items-center justify-center border-b lg:border-b-0 lg:border-r border-slate-800 relative select-none">
-                {/* Visual Registration & Crop Target Indicators */}
                 <div className="w-full max-w-md bg-slate-900 rounded-xl border border-slate-700 shadow-2xl p-5 relative overflow-hidden group">
-                  {/* Proof Sheet Trim & Bleed Simulated Viewport */}
                   <div className="relative border-2 border-dashed border-red-500/60 rounded-lg p-3 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 aspect-[4/3] flex flex-col items-center justify-center text-center overflow-hidden">
                     {viewingArtwork.fileUrl && !artworkImageError && (viewingArtwork.fileUrl.match(/\.(jpeg|jpg|png|webp|gif|svg)(\?.*)?$/i) || viewingArtwork.mimeType?.startsWith('image/')) ? (
                       <img
@@ -1759,7 +1722,6 @@ export default function OrderAssignmentCenterPage() {
                             PDF/X-1a:2001 • CMYK 300 DPI Prepress
                           </div>
                         </div>
-                        {/* CMYK Color Calibration Swatches */}
                         <div className="flex items-center justify-center gap-1.5 pt-2">
                           <span className="h-3 w-6 rounded-xs bg-cyan-400" title="Cyan 100%" />
                           <span className="h-3 w-6 rounded-xs bg-fuchsia-500" title="Magenta 100%" />
@@ -1769,7 +1731,6 @@ export default function OrderAssignmentCenterPage() {
                       </div>
                     )}
 
-                    {/* Bleed Guideline Legends */}
                     <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[9px] font-mono text-slate-400 bg-slate-950/80 px-2 py-1 rounded backdrop-blur-xs border border-slate-800">
                       <span className="flex items-center gap-1">
                         <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
@@ -1790,7 +1751,7 @@ export default function OrderAssignmentCenterPage() {
                 </div>
               </div>
 
-              {/* Right Preflight Inspection Panel (4 Cols) */}
+              {/* Right Preflight Inspection Panel */}
               <div className="lg:col-span-4 p-6 bg-slate-900/90 flex flex-col justify-between space-y-6">
                 <div className="space-y-5">
                   <div>
@@ -1825,7 +1786,6 @@ export default function OrderAssignmentCenterPage() {
                     </div>
                   </div>
 
-                  {/* Preflight Checks List */}
                   <div>
                     <h3 className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider mb-2.5">
                       Automated Preflight Checks
@@ -1847,7 +1807,6 @@ export default function OrderAssignmentCenterPage() {
                   </div>
                 </div>
 
-                {/* Actions */}
                 <div className="space-y-2 pt-4 border-t border-slate-800">
                   {viewingArtwork.fileUrl ? (
                     <a

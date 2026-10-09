@@ -61,24 +61,24 @@ export function Breadcrumbs() {
     <nav aria-label="Breadcrumb" className="flex items-center space-x-1.5 text-[11px] font-mono">
       <Link
         href="/admin/dashboard"
-        className="flex items-center gap-1 text-zinc-500 hover:text-zinc-900 transition-colors"
+        className="flex items-center gap-1 text-[#525252] hover:text-black transition-colors"
         title="Admin Operations"
       >
-        <RiHome4Line className="h-3.5 w-3.5 text-zinc-400" />
-        <span className="font-bold text-zinc-700 uppercase tracking-wider">ERP</span>
+        <RiHome4Line className="h-3.5 w-3.5 text-[#737373]" />
+        <span className="font-semibold text-black uppercase tracking-wider">ERP</span>
       </Link>
 
       {crumbs.map((crumb) => (
         <React.Fragment key={crumb.href}>
-          <RiArrowRightSLine className="h-3.5 w-3.5 text-zinc-400 flex-shrink-0" />
+          <RiArrowRightSLine className="h-3.5 w-3.5 text-[#737373] flex-shrink-0" />
           {crumb.isLast ? (
-            <span className="font-bold text-zinc-900 truncate max-w-[200px]" aria-current="page">
+            <span className="font-semibold text-black truncate max-w-[200px]" aria-current="page">
               {crumb.label}
             </span>
           ) : (
             <Link
               href={crumb.href}
-              className="text-zinc-500 hover:text-zinc-900 transition-colors truncate max-w-[150px]"
+              className="text-[#525252] hover:text-black transition-colors truncate max-w-[150px]"
             >
               {crumb.label}
             </Link>
@@ -88,3 +88,4 @@ export function Breadcrumbs() {
     </nav>
   );
 }
+

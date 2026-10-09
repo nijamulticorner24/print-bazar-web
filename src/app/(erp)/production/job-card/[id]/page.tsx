@@ -10,9 +10,9 @@ import {
   Clock,
   AlertCircle,
   FileCheck,
-  ShieldCheck,
   Scissors,
 } from 'lucide-react';
+import { Button } from '@/components/ui';
 
 export default function ShopFloorJobCardPrintable({
   params,
@@ -23,43 +23,45 @@ export default function ShopFloorJobCardPrintable({
   const jobId = resolvedParams.id || 'JOB-2026-001';
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] py-8 px-4 sm:px-6">
+    <div className="min-h-screen bg-[#F8F8F8] py-8 px-4 sm:px-6">
       {/* Action Bar */}
       <div className="mx-auto max-w-4xl mb-4 flex items-center justify-between print:hidden">
         <Link
           href="/production/queue"
-          className="inline-flex items-center gap-1.5 text-xs font-bold text-zinc-600 hover:text-brand-dark"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-black"
         >
           <ArrowLeft className="h-4 w-4" />
           <span>Back to Production Floor Queue</span>
         </Link>
 
-        <button
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => window.print()}
-          className="inline-flex items-center gap-2 bg-[#FCDD55] hover:bg-[#FBBF24] text-brand-dark font-black text-xs px-4 py-2 rounded-[6px] border border-brand-dark shadow-subtle"
+          className="shadow-xs"
         >
-          <Printer className="h-4 w-4" />
+          <Printer className="h-4 w-4 mr-1.5" />
           <span>Print Shop Floor Job Card (A4 Sheet)</span>
-        </button>
+        </Button>
       </div>
 
       {/* Industrial Work Order Sheet */}
-      <div className="mx-auto max-w-4xl bg-white border-2 border-brand-dark rounded-[8px] p-6 sm:p-10 shadow-card print:border-none print:shadow-none print:p-0 text-brand-dark">
+      <div className="mx-auto max-w-4xl bg-white border border-slate-200 rounded-xl p-6 sm:p-10 shadow-card print:border-none print:shadow-none print:p-0 text-black">
         {/* Giant Shop Floor Header */}
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-6 border-b-4 border-brand-dark">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-6 border-b-2 border-black">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-black bg-[#1A1A1A] text-[#FCDD55] px-2 py-0.5 rounded">
+              <span className="text-[10px] font-mono font-bold bg-[#FFED00] text-black px-2 py-0.5 rounded border border-[#E5E5E5]">
                 PRESS SHOP-FLOOR JOB CARD
               </span>
-              <span className="text-xs font-mono font-bold text-zinc-500">
+              <span className="text-xs font-mono font-bold text-slate-500">
                 STATION ID: MC-02-INDIGO
               </span>
             </div>
-            <h1 className="text-4xl sm:text-5xl font-black text-brand-dark font-mono tracking-tight mt-1">
+            <h1 className="text-3xl sm:text-4xl font-black text-black font-mono tracking-tight mt-1">
               #{jobId}
             </h1>
-            <p className="text-xs font-mono text-zinc-500 mt-1">
+            <p className="text-xs font-mono text-slate-500 mt-1">
               ORDER LINK: <strong>#PB-2026-0001</strong> • CLIENT: <strong>Acme Logistics Corp</strong>
             </p>
           </div>

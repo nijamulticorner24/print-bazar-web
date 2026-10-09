@@ -188,10 +188,35 @@ export interface ProductCategoryItem {
   image?: string;
   sortOrder: number;
   isActive: boolean;
-  _count?: { products: number };
+  parentId?: string | null;
+  parent?: { id: string; name: string; slug: string } | null;
+  children?: ProductCategoryItem[];
+  _count?: { products: number; children?: number };
 }
 
 export type ProductOptionRequirement = 'REQUIRED' | 'OPTIONAL' | 'DISABLED';
+
+export interface PricingRule {
+  id: string;
+  productId: string;
+  minQty: number;
+  maxQty: number;
+  unitPrice: number;
+  discountPercent?: number;
+  label?: string;
+  attributeCombination?: Record<string, any>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreatePricingRuleDto {
+  minQty: number;
+  maxQty?: number | null;
+  discountPercent?: number | null;
+  unitPrice?: number | null;
+  label?: string | null;
+  attributeCombination?: Record<string, any> | null;
+}
 
 export interface DynamicProduct {
   id: string;
@@ -215,6 +240,12 @@ export interface DynamicProduct {
   trackInventory: boolean;
   stockQuantity: number;
   lowStockAlert: number;
+  defaultSize?: string | null;
+  // Fulfillment & Payment Surcharges (Admin-Controlled)
+  courierCharge?: number | string | null;
+  freeShippingThreshold?: number | string | null;
+  allowCod?: boolean;
+  codSurcharge?: number | string | null;
   // Dynamic Product Flow Engine Configuration (Admin-Controlled)
   artworkRequirement?: ProductOptionRequirement;
   artworkPrice?: number | string | null;
@@ -225,7 +256,7 @@ export interface DynamicProduct {
   designServicePrice?: number | string | null;
   images: ProductImageItem[];
   fields: DynamicField[];
-  pricingMatrices?: any[];
+  pricingMatrices?: PricingRule[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -349,6 +380,9 @@ export const api = {
     hasReferenceImage?: boolean;
     shippingPincode?: string;
     isInterState?: boolean;
+    deliveryMethod?: 'COURIER' | 'STORE_PICKUP' | string;
+    paymentMethod?: 'ONLINE' | 'COD' | string;
+    isCod?: boolean;
   }) => fetchApi<any>('/pricing/calculate-quote', { method: 'POST', body: JSON.stringify(data) }),
 
   // Artwork & Media Uploads
@@ -463,6 +497,29 @@ export const api = {
     fetchApi<{ success: boolean; message: string }>(`/admin/catalogue/products/${productId}/images/${imageId}`, { method: 'DELETE' }),
   adminReorderImages: (productId: string, orderedImageIds: string[]) =>
     fetchApi<{ success: boolean; message: string }>(`/admin/catalogue/products/${productId}/images/reorder`, { method: 'PATCH', body: JSON.stringify({ orderedImageIds }) }),
+
+  // Admin Catalogue: Pricing Rules & Quantity Tier Offers
+  adminGetPricingRules: (productId: string) =>
+    fetchApi<PricingRule[]>(`/admin/catalogue/products/${productId}/pricing-rules`),
+  adminAddPricingRule: (productId: string, data: CreatePricingRuleDto) =>
+    fetchApi<PricingRule>(`/admin/catalogue/products/${productId}/pricing-rules`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  adminUpdatePricingRule: (productId: string, ruleId: string, data: Partial<CreatePricingRuleDto>) =>
+    fetchApi<PricingRule>(`/admin/catalogue/products/${productId}/pricing-rules/${ruleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  adminDeletePricingRule: (productId: string, ruleId: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/admin/catalogue/products/${productId}/pricing-rules/${ruleId}`, {
+      method: 'DELETE',
+    }),
+  adminSaveBatchPricingRules: (productId: string, rules: CreatePricingRuleDto[]) =>
+    fetchApi<PricingRule[]>(`/admin/catalogue/products/${productId}/pricing-rules-batch`, {
+      method: 'PUT',
+      body: JSON.stringify({ rules }),
+    }),
 
   // Admin Inventory
   adminListInventory: (query?: { category?: string; search?: string; lowStockOnly?: boolean }) => {

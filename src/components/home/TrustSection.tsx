@@ -38,7 +38,7 @@ const STATS = [
 
 export function TrustSection() {
   return (
-    <section id="why-us" className="bg-white py-14 lg:py-20 border-b border-slate-200">
+    <section id="why-us" className="bg-white py-14 lg:py-20 border-b border-slate-200 w-full max-w-full overflow-hidden">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
           {/* Left Column: Why Businesses Trust Us */}

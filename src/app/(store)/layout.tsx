@@ -1,5 +1,6 @@
 import React from 'react';
 import { Navbar } from '@/components/Navbar';
+import { StorefrontMobileBottomNav } from '@/components/StorefrontMobileBottomNav';
 import Link from 'next/link';
 import { Printer, PhoneCall, MapPin, ShieldCheck, Award, ArrowUpRight } from 'lucide-react';
 
@@ -9,15 +10,18 @@ export default function CustomerStoreLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="min-h-screen flex flex-col bg-white w-full max-w-full overflow-x-hidden">
       {/* Customer Storefront Navigation (Navbar with categories, promo ribbon, live cart) */}
       <Navbar />
 
-      {/* Storefront Page Content */}
-      <main className="flex-1">{children}</main>
+      {/* Storefront Page Content (padded on mobile to accommodate bottom nav) */}
+      <main className="flex-1 w-full max-w-full overflow-x-hidden pb-16 md:pb-0">{children}</main>
+
+      {/* Mobile-First Bottom Navigation Bar */}
+      <StorefrontMobileBottomNav />
 
       {/* Modern Refined Print Manufacturing Footer */}
-      <footer className="bg-slate-900 text-slate-200 border-t border-slate-800 pt-16 pb-10 px-4 sm:px-8">
+      <footer className="bg-slate-900 text-slate-200 border-t border-slate-800 pt-16 pb-24 md:pb-10 px-4 sm:px-8 w-full max-w-full overflow-hidden">
         <div className="mx-auto max-w-7xl">
           {/* Top Row: Factory Capabilities & Brand Manifesto */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-slate-800">
