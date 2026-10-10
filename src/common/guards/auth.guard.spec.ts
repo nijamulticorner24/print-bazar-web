@@ -17,10 +17,10 @@ describe('RBAC & Permissions Security Matrix Tests', () => {
   });
 
   function createMockContext(user: any, requiredRoles?: UserRole[], requiredPermissions?: string[], requiredDepartments?: Department[]): ExecutionContext {
-    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: string) => {
-      if (key === 'roles') return requiredRoles;
-      if (key === 'permissions') return requiredPermissions;
-      if (key === 'departments') return requiredDepartments;
+    jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key: any) => {
+      if (key === 'roles') return requiredRoles as any;
+      if (key === 'permissions') return requiredPermissions as any;
+      if (key === 'departments') return requiredDepartments as any;
       return undefined;
     });
 

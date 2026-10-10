@@ -13,8 +13,10 @@ import {
   RiArrowLeftLine,
   RiSparklingFill,
   RiTruckLine,
+  RiMovieLine,
+  RiPlayCircleLine,
 } from 'react-icons/ri';
-import { getEstimatedDeliveryText } from '@/lib/utils';
+import { getEstimatedDeliveryText, isVideoMedia } from '@/lib/utils';
 import { api, DynamicProduct, resolveImageUrl } from '@/lib/api';
 import {
   ProductConfigurationFlow,
@@ -241,18 +243,39 @@ export default function ProductDetailPage() {
                 );
               })()}
 
-              {/* Media Gallery Display */}
+              {/* Media Gallery Display (Photos & Video Demos) */}
               <div className="mt-6 space-y-3">
-                <div className="relative h-64 sm:h-80 w-full bg-slate-50 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center p-4">
-                  <img
-                    src={resolveImageUrl(currentImage.url)}
-                    alt={currentImage.altText || product.name}
-                    className="max-h-full max-w-full object-contain transition-all duration-300"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src =
-                        'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&auto=format&fit=crop&q=80';
-                    }}
-                  />
+                <div className="relative h-64 sm:h-80 w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center p-2">
+                  {isVideoMedia(currentImage.url) ? (
+                    <video
+                      src={resolveImageUrl(currentImage.url)}
+                      controls
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      className="max-h-full max-w-full rounded-lg object-contain"
+                    />
+                  ) : (
+                    <img
+                      src={resolveImageUrl(currentImage.url)}
+                      alt={currentImage.altText || product.name}
+                      className="max-h-full max-w-full object-contain transition-all duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src =
+                          'https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=600&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                  )}
+
+                  {/* Video Badge */}
+                  {isVideoMedia(currentImage.url) && (
+                    <span className="absolute top-3 right-3 bg-indigo-900/90 backdrop-blur-xs text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded-md border border-indigo-500/40 shadow-sm flex items-center gap-1.5 pointer-events-none">
+                      <RiMovieLine className="h-3.5 w-3.5 text-[#FFED00]" />
+                      <span>DEMO VIDEO</span>
+                    </span>
+                  )}
+
                   {currentImage.caption && (
                     <div className="absolute bottom-3 left-3 right-3 bg-slate-950/80 backdrop-blur-xs text-white text-xs px-3 py-1.5 rounded-lg font-medium">
                       {currentImage.caption}
@@ -263,20 +286,30 @@ export default function ProductDetailPage() {
                 {/* Thumbnails Row */}
                 {images.length > 1 && (
                   <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
-                    {images.map((img, idx) => (
-                      <button
-                        key={img.id}
-                        type="button"
-                        onClick={() => setActiveImageIndex(idx)}
-                        className={`relative h-14 w-18 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all ${
-                          activeImageIndex === idx
-                            ? 'border-slate-900 ring-2 ring-[#FFED00]'
-                            : 'border-slate-200 opacity-70 hover:opacity-100'
-                        }`}
-                      >
-                        <img src={resolveImageUrl(img.url)} alt={img.altText || ''} className="h-full w-full object-cover" />
-                      </button>
-                    ))}
+                    {images.map((img, idx) => {
+                      const isVid = isVideoMedia(img.url);
+                      return (
+                        <button
+                          key={img.id}
+                          type="button"
+                          onClick={() => setActiveImageIndex(idx)}
+                          className={`relative h-14 w-18 rounded-lg overflow-hidden border-2 flex-shrink-0 transition-all bg-slate-900 ${
+                            activeImageIndex === idx
+                              ? 'border-slate-900 ring-2 ring-[#FFED00]'
+                              : 'border-slate-200 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          {isVid ? (
+                            <div className="relative h-full w-full bg-slate-950 flex items-center justify-center">
+                              <video src={resolveImageUrl(img.url)} className="h-full w-full object-cover opacity-60 pointer-events-none" />
+                              <RiPlayCircleLine className="h-5 w-5 text-white absolute inset-auto z-10 drop-shadow-md" />
+                            </div>
+                          ) : (
+                            <img src={resolveImageUrl(img.url)} alt={img.altText || ''} className="h-full w-full object-cover" />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -27,8 +27,13 @@ import {
   RiImageAddLine,
   RiLockLine,
   RiRulerLine,
+  RiVideoLine,
+  RiMovieLine,
+  RiPlayCircleLine,
+  RiFilmLine,
+  RiVideoAddLine,
 } from 'react-icons/ri';
-import { formatCurrency, getEstimatedDeliveryText } from '@/lib/utils';
+import { formatCurrency, getEstimatedDeliveryText, isVideoMedia } from '@/lib/utils';
 import {
   api,
   DynamicProduct,
@@ -62,7 +67,7 @@ export default function AdminProductEditorPage() {
   const [product, setProduct] = useState<DynamicProduct | null>(null);
   const [categories, setCategories] = useState<ProductCategoryItem[]>([]);
   const [activeTab, setActiveTab] = useState<
-    'GENERAL' | 'MEDIA' | 'FIELDS' | 'ARTWORK_DESIGN' | 'PRICING' | 'INVENTORY' | 'PREVIEW'
+    'GENERAL' | 'MEDIA' | 'FIELDS' | 'ARTWORK_DESIGN' | 'PRICING' | 'PREVIEW'
   >('GENERAL');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -78,11 +83,18 @@ export default function AdminProductEditorPage() {
   const [status, setStatus] = useState<'DRAFT' | 'PUBLISHED' | 'ARCHIVED'>('DRAFT');
   const [basePrice, setBasePrice] = useState<number>(0);
   const [minQuantity, setMinQuantity] = useState<number>(100);
+  const [quantityStep, setQuantityStep] = useState<number>(100);
   const [maxQuantity, setMaxQuantity] = useState<number>(10000);
   const [productionDays, setProductionDays] = useState<number>(2);
   const [trackInventory, setTrackInventory] = useState(false);
   const [stockQuantity, setStockQuantity] = useState(0);
   const [defaultSize, setDefaultSize] = useState('');
+  const [sizeInputMode, setSizeInputMode] = useState<'PRESET' | 'BUILDER' | 'RAW'>('PRESET');
+  const [manualWidth, setManualWidth] = useState<string>('89');
+  const [manualHeight, setManualHeight] = useState<string>('54');
+  const [manualDepth, setManualDepth] = useState<string>('');
+  const [manualUnit, setManualUnit] = useState<'mm' | 'cm' | 'in' | 'ft' | 'm'>('mm');
+  const [manualSizeLabel, setManualSizeLabel] = useState<string>('Standard Landscape');
 
   // Fulfillment & Payment Surcharges (Admin-Controlled Delivery & COD)
   const [courierCharge, setCourierCharge] = useState<number>(100);
@@ -115,6 +127,7 @@ export default function AdminProductEditorPage() {
   const [isAddFieldModalOpen, setIsAddFieldModalOpen] = useState(false);
   const [fieldLabel, setFieldLabel] = useState('');
   const [fieldKey, setFieldKey] = useState('');
+  const [isFieldKeyTouched, setIsFieldKeyTouched] = useState(false);
   const [fieldType, setFieldType] = useState<any>('SELECT');
   const [fieldDesc, setFieldDesc] = useState('');
   const [fieldRequired, setFieldRequired] = useState(true);
@@ -129,6 +142,7 @@ export default function AdminProductEditorPage() {
   const [activeFieldForOption, setActiveFieldForOption] = useState<string | null>(null);
   const [newOptionLabel, setNewOptionLabel] = useState('');
   const [newOptionValue, setNewOptionValue] = useState('');
+  const [isNewOptionValueTouched, setIsNewOptionValueTouched] = useState(false);
   const [newOptionPrice, setNewOptionPrice] = useState<number>(0);
 
   // Form State: Pricing Rules (Tab 5: Volume Offers & Tier Engine)
@@ -170,8 +184,9 @@ export default function AdminProductEditorPage() {
       setDescription(prod.description || '');
       setStatus(prod.status);
       setBasePrice(Number(prod.basePrice));
-      setMinQuantity(prod.minQuantity);
-      setMaxQuantity(prod.maxQuantity);
+      setMinQuantity(prod.minQuantity || 100);
+      setQuantityStep((prod as any).quantityStep || (prod.minQuantity >= 100 ? 100 : prod.minQuantity >= 50 ? 50 : 25));
+      setMaxQuantity(prod.maxQuantity || 10000);
       setProductionDays(prod.productionDays);
       setTrackInventory(prod.trackInventory);
       setStockQuantity(prod.stockQuantity);
@@ -233,6 +248,7 @@ export default function AdminProductEditorPage() {
         status,
         basePrice: Number(basePrice),
         minQuantity: Number(minQuantity),
+        quantityStep: Number(quantityStep),
         maxQuantity: Number(maxQuantity),
         productionDays: Number(productionDays),
         defaultSize: defaultSize.trim() || null,
@@ -260,10 +276,27 @@ export default function AdminProductEditorPage() {
     }
   };
 
-  // Handle File Selection & Drag-and-Drop
+  // Handle Delete Product Permanently
+  const handleDeleteProduct = async () => {
+    if (!confirm(`Are you sure you want to delete product "${name}"?\n\nIf the product has historical orders, it will be safely archived instead.`)) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await api.adminDeleteProduct(productId);
+      router.push('/admin/products');
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete product');
+      setIsSaving(false);
+    }
+  };
+
+  // Handle File Selection & Drag-and-Drop (Images & Videos)
   const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (PNG, JPG, WEBP, SVG).');
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/') || Boolean(file.name.match(/\.(mp4|webm|mov|ogg|m4v|mkv)$/i));
+    if (!isImage && !isVideo) {
+      alert('Please select a valid image (PNG, JPG, WEBP, SVG) or video file (MP4, WEBM, MOV).');
       return;
     }
     setSelectedFile(file);
@@ -271,7 +304,7 @@ export default function AdminProductEditorPage() {
     setFilePreview(preview);
     if (!newImageAlt) {
       const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-      setNewImageAlt(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
+      setNewImageAlt((isVideo ? 'Video: ' : '') + cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
     }
   };
 
@@ -283,18 +316,24 @@ export default function AdminProductEditorPage() {
     setFilePreview(null);
   };
 
-  // Direct quick upload from media dropzone
+  // Direct quick upload from media dropzone (Supports both Images & Videos)
   const handleQuickUpload = async (files: FileList | File[]) => {
-    const validFiles = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    const validFiles = Array.from(files).filter(
+      (f) =>
+        f.type.startsWith('image/') ||
+        f.type.startsWith('video/') ||
+        Boolean(f.name.match(/\.(mp4|webm|mov|ogg|m4v|mkv)$/i)),
+    );
     if (validFiles.length === 0) {
-      alert('Please drop valid image files (PNG, JPG, WEBP, SVG).');
+      alert('Please drop valid image files (PNG, JPG, WEBP, SVG) or demo video clips (MP4, WEBM, MOV).');
       return;
     }
     setIsUploading(true);
     try {
       for (const file of validFiles) {
+        const isVid = file.type.startsWith('video/') || Boolean(file.name.match(/\.(mp4|webm|mov|ogg|m4v|mkv)$/i));
         await api.adminUploadProductImage(productId, file, {
-          altText: file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '),
+          altText: (isVid ? 'Video: ' : '') + file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' '),
         });
       }
       await loadData();
@@ -305,14 +344,14 @@ export default function AdminProductEditorPage() {
     }
   };
 
-  // Handle Add Image Modal Submit
+  // Handle Add Image / Video Modal Submit
   const handleAddImage = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUploading(true);
     try {
       if (uploadMode === 'FILE') {
         if (!selectedFile) {
-          alert('Please select an image file to upload.');
+          alert('Please select an image or video file to upload.');
           setIsUploading(false);
           return;
         }
@@ -323,7 +362,7 @@ export default function AdminProductEditorPage() {
         });
       } else {
         if (!newImageUrl) {
-          alert('Please enter a valid image URL.');
+          alert('Please enter a valid image or video stream URL.');
           setIsUploading(false);
           return;
         }
@@ -342,7 +381,7 @@ export default function AdminProductEditorPage() {
       setIsPrimaryImage(false);
       await loadData();
     } catch (err: any) {
-      alert(err?.message || 'Failed to add image');
+      alert(err?.message || 'Failed to add media');
     } finally {
       setIsUploading(false);
     }
@@ -372,17 +411,38 @@ export default function AdminProductEditorPage() {
   // Handle Add Dynamic Field
   const handleCreateField = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fieldLabel || !fieldKey) return;
+    const cleanLabel = fieldLabel.trim();
+    if (!cleanLabel) {
+      alert('Please enter a Field Label.');
+      return;
+    }
+
+    const autoKey = cleanLabel
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/(^_|_$)+/g, '');
+
+    const finalKey = (fieldKey.trim() || autoKey)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/(^_|_$)+/g, '');
 
     const validOptions = fieldOptions
-      .filter((o) => o.label.trim() !== '' && o.value.trim() !== '')
-      .map((o, idx) => ({
-        label: o.label.trim(),
-        value: o.value.trim(),
-        priceModifier: Number(o.priceModifier || 0),
-        priceModifierType: 'FIXED',
-        isDefault: idx === 0,
-      }));
+      .filter((o) => o.label.trim() !== '')
+      .map((o, idx) => {
+        const optClean = o.label.trim();
+        const autoOptVal = optClean
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/(^_|_$)+/g, '');
+        return {
+          label: optClean,
+          value: o.value.trim() || autoOptVal,
+          priceModifier: Number(o.priceModifier || 0),
+          priceModifierType: 'FIXED',
+          isDefault: idx === 0,
+        };
+      });
 
     const conditionalLogic =
       hasCondition && conditionParentKey
@@ -395,8 +455,8 @@ export default function AdminProductEditorPage() {
 
     try {
       await api.adminAddField(productId, {
-        label: fieldLabel,
-        key: fieldKey,
+        label: cleanLabel,
+        key: finalKey,
         type: fieldType,
         description: fieldDesc,
         isRequired: fieldRequired,
@@ -406,6 +466,7 @@ export default function AdminProductEditorPage() {
       setIsAddFieldModalOpen(false);
       setFieldLabel('');
       setFieldKey('');
+      setIsFieldKeyTouched(false);
       setFieldDesc('');
       setFieldOptions([{ label: '', value: '', priceModifier: 0 }]);
       setHasCondition(false);
@@ -429,17 +490,23 @@ export default function AdminProductEditorPage() {
   // Handle Add Option to Field
   const handleAddOptionToField = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeFieldForOption || !newOptionLabel || !newOptionValue) return;
+    const cleanLabel = newOptionLabel.trim();
+    if (!activeFieldForOption || !cleanLabel) return;
+    const finalVal = (newOptionValue.trim() || cleanLabel)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/(^_|_$)+/g, '');
 
     try {
       await api.adminAddFieldOption(productId, activeFieldForOption, {
-        label: newOptionLabel,
-        value: newOptionValue,
+        label: cleanLabel,
+        value: finalVal,
         priceModifier: Number(newOptionPrice),
       });
       setActiveFieldForOption(null);
       setNewOptionLabel('');
       setNewOptionValue('');
+      setIsNewOptionValueTouched(false);
       setNewOptionPrice(0);
       await loadData();
     } catch (err: any) {
@@ -670,6 +737,85 @@ export default function AdminProductEditorPage() {
     }
   }, [activeTab, product, previewQuantity, previewValues]);
 
+  // Tab Step Configuration
+  const TABS_SEQUENCE = [
+    { id: 'GENERAL', label: '1. General Info', short: 'General Info' },
+    { id: 'MEDIA', label: '2. Media Gallery', short: 'Media Gallery' },
+    { id: 'FIELDS', label: '3. Dynamic Fields', short: 'Dynamic Fields' },
+    { id: 'ARTWORK_DESIGN', label: '4. Artwork & Design Engine', short: 'Artwork & Design' },
+    { id: 'PRICING', label: '5. Pricing Rules & Offers', short: 'Pricing Rules' },
+    { id: 'PREVIEW', label: '6. Live Simulator', short: 'Live Simulator' },
+  ] as const;
+
+  const renderBottomTabNavigation = (currentTabId: typeof activeTab) => {
+    const currentIndex = TABS_SEQUENCE.findIndex((t) => t.id === currentTabId);
+    const prevTab = currentIndex > 0 ? TABS_SEQUENCE[currentIndex - 1] : null;
+    const nextTab = currentIndex < TABS_SEQUENCE.length - 1 ? TABS_SEQUENCE[currentIndex + 1] : null;
+
+    return (
+      <div className="mt-8 pt-5 border-t border-slate-200/90 flex flex-col sm:flex-row items-center justify-between gap-3 bg-gradient-to-r from-slate-50 via-white to-amber-50/20 p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div>
+          {prevTab ? (
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab(prevTab.id as any);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
+            >
+              <RiArrowLeftLine className="h-4 w-4 text-slate-600" />
+              <span>Previous: {prevTab.label}</span>
+            </button>
+          ) : (
+            <span className="text-[11px] font-mono font-bold text-slate-400 uppercase">
+              Step 1 of {TABS_SEQUENCE.length} (Product Core)
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+          <button
+            type="button"
+            onClick={handleSaveGeneral}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition shadow-2xs cursor-pointer active:scale-95"
+          >
+            <RiSaveLine className="h-4 w-4 text-slate-600" />
+            <span>{isSaving ? 'Saving Changes...' : 'Save Progress'}</span>
+          </button>
+
+          {nextTab ? (
+            <button
+              type="button"
+              onClick={async () => {
+                if (currentTabId === 'GENERAL' || currentTabId === 'ARTWORK_DESIGN') {
+                  await handleSaveGeneral();
+                }
+                setActiveTab(nextTab.id as any);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#FCDD55] hover:bg-[#FBBF24] text-zinc-950 font-black text-xs border border-zinc-900 shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              <span>Next: {nextTab.label}</span>
+              <RiArrowRightLine className="h-4 w-4" />
+            </button>
+          ) : (
+            <Link
+              href={`/products/${product?.slug}`}
+              target="_blank"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm transition active:scale-95 cursor-pointer"
+            >
+              <RiEyeLine className="h-4 w-4" />
+              <span>View Live on Storefront</span>
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="py-24 text-center flex flex-col items-center">
@@ -727,9 +873,18 @@ export default function AdminProductEditorPage() {
           </Link>
           <button
             type="button"
+            onClick={handleDeleteProduct}
+            disabled={isSaving}
+            className="p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition"
+            title="Delete Product"
+          >
+            <RiDeleteBin7Line className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
             onClick={handleSaveGeneral}
             disabled={isSaving}
-            className="flex items-center gap-1.5 bg-[#FCDD55] hover:bg-[#FBBF24] text-zinc-950 font-black text-xs px-5 py-2 rounded-lg border border-zinc-900 shadow-sm transition active:scale-95"
+            className="flex items-center gap-1.5 bg-[#FCDD55] hover:bg-[#FBBF24] text-zinc-950 font-black text-xs px-5 py-2 rounded-lg border border-zinc-900 shadow-sm transition active:scale-95 cursor-pointer"
           >
             <RiSaveLine className="h-4 w-4" />
             <span>{isSaving ? 'Saving Changes...' : 'Save Configuration'}</span>
@@ -751,7 +906,7 @@ export default function AdminProductEditorPage() {
         </div>
       )}
 
-      {/* 7-TAB Navigation Bar */}
+      {/* 6-TAB Navigation Bar */}
       <div className="flex items-center gap-2 border-b border-zinc-200 overflow-x-auto pb-1 no-scrollbar">
         {[
           { id: 'GENERAL', label: '1. General Info' },
@@ -759,8 +914,7 @@ export default function AdminProductEditorPage() {
           { id: 'FIELDS', label: `3. Dynamic Fields (${product.fields?.length || 0})` },
           { id: 'ARTWORK_DESIGN', label: '4. Artwork & Design Engine' },
           { id: 'PRICING', label: `5. Pricing Rules & Offers (${pricingRules.length})` },
-          { id: 'INVENTORY', label: '6. Inventory & Materials' },
-          { id: 'PREVIEW', label: '7. Live Customer Flow Simulator' },
+          { id: 'PREVIEW', label: '6. Live Customer Flow Simulator' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -795,17 +949,35 @@ export default function AdminProductEditorPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-zinc-800 mb-1">Category</label>
+              <label className="block text-xs font-bold text-zinc-800 mb-1">Category & Subcategory</label>
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs text-zinc-900 focus:outline-none focus:border-zinc-900"
+                className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs font-bold text-zinc-900 focus:outline-none focus:border-zinc-900"
               >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {(() => {
+                  const rootCats = categories.filter((c) => !c.parentId);
+                  return (rootCats.length > 0 ? rootCats : categories).map((root) => {
+                    const children = categories.filter((c) => c.parentId === root.id);
+                    if (children.length === 0) {
+                      return (
+                        <option key={root.id} value={root.id}>
+                          📁 {root.name}
+                        </option>
+                      );
+                    }
+                    return (
+                      <optgroup key={root.id} label={`📁 ${root.name}`}>
+                        <option value={root.id}>• {root.name} (Main Category)</option>
+                        {children.map((sub) => (
+                          <option key={sub.id} value={sub.id}>
+                            ↳ {sub.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  });
+                })()}
               </select>
             </div>
 
@@ -852,16 +1024,6 @@ export default function AdminProductEditorPage() {
                 <option value="PUBLISHED">PUBLISHED (Live for ordering)</option>
                 <option value="ARCHIVED">ARCHIVED</option>
               </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-zinc-800 mb-1">Minimum Order Quantity</label>
-              <input
-                type="number"
-                value={minQuantity}
-                onChange={(e) => setMinQuantity(Number(e.target.value))}
-                className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs font-mono text-zinc-900"
-              />
             </div>
 
             <div className="space-y-2">
@@ -929,86 +1091,662 @@ export default function AdminProductEditorPage() {
               })()}
             </div>
 
-            {/* Default Product Size (Admin-configured; read-only for customer storefront) */}
-            <div className="md:col-span-2 p-4 bg-slate-50 border border-slate-200/90 rounded-xl space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-2.5">
-                <div>
-                  <label className="block text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Product Default Size (Fixed Standard Dimensions)
-                  </label>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Set the factory standard dimensions for this product. Customers <strong>cannot edit or delete</strong> this size on the storefront; it is displayed as a verified manufacturing specification.
+            {/* Batch Ordering & Quantity Denomination (Admin Fixed MOQ & Step) */}
+            <div className="md:col-span-2 p-5 bg-gradient-to-br from-slate-50 via-white to-amber-50/30 border border-slate-200 rounded-xl space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center font-bold text-sm border border-amber-200/60 shadow-2xs">
+                    🔢
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider font-mono">
+                      Batch Quantity & Denomination Rules (Admin Fixed)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Define the minimum order volume and the exact fixed denomination increment for customer ordering.
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase bg-amber-100 text-amber-900 px-2.5 py-1 rounded border border-amber-300 shadow-2xs flex-shrink-0 self-start sm:self-center">
+                  <RiLockLine className="h-3 w-3" /> Admin Enforced
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* 1. Minimum Order Quantity (MOQ) */}
+                <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-900">
+                      Minimum Order Quantity (MOQ)
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                      Starting Run
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      step={quantityStep || 1}
+                      value={minQuantity}
+                      onChange={(e) => setMinQuantity(Math.max(1, Number(e.target.value)))}
+                      className="w-full bg-slate-50/50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs font-mono font-black text-slate-900 focus:bg-white focus:outline-none focus:border-slate-900 shadow-2xs"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold text-slate-400 uppercase">
+                      Units
+                    </span>
+                  </div>
+
+                  {/* MOQ Presets */}
+                  <div>
+                    <span className="text-[9px] font-mono uppercase font-bold text-slate-400 block mb-1">
+                      Quick MOQ Presets:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {[25, 50, 100, 250, 500, 1000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setMinQuantity(preset)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                            minQuantity === preset
+                              ? 'bg-slate-900 text-[#FFED00] shadow-2xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    Customers cannot place an order below this batch threshold.
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase bg-slate-200 text-slate-800 px-2 py-0.5 rounded border border-slate-300 flex-shrink-0 self-start sm:self-center">
+
+                {/* 2. Quantity Increasing Denomination (Fixed Step) */}
+                <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-900">
+                      Increasing Denomination (Step)
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                      Fixed Step
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="1"
+                      value={quantityStep}
+                      onChange={(e) => setQuantityStep(Math.max(1, Number(e.target.value)))}
+                      className="w-full bg-slate-50/50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs font-mono font-black text-indigo-950 focus:bg-white focus:outline-none focus:border-indigo-600 shadow-2xs"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold text-indigo-400 uppercase">
+                      +Units/Step
+                    </span>
+                  </div>
+
+                  {/* Denomination Presets */}
+                  <div>
+                    <span className="text-[9px] font-mono uppercase font-bold text-slate-400 block mb-1">
+                      Quick Denominations:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {[25, 50, 100, 250, 500, 1000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setQuantityStep(preset)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                            quantityStep === preset
+                              ? 'bg-indigo-900 text-[#FFED00] shadow-2xs'
+                              : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200/60'
+                          }`}
+                        >
+                          +{preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    Every stepper click or custom run strictly multiplies by this fixed step.
+                  </p>
+                </div>
+
+                {/* 3. Maximum Order Quantity Run Cap */}
+                <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-900">
+                      Maximum Quantity (Run Cap)
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                      Max Batch
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={minQuantity || 1}
+                      step={quantityStep || 100}
+                      value={maxQuantity}
+                      onChange={(e) => setMaxQuantity(Math.max(minQuantity, Number(e.target.value)))}
+                      className="w-full bg-slate-50/50 border border-slate-300 rounded-lg px-3.5 py-2 text-xs font-mono font-black text-slate-900 focus:bg-white focus:outline-none focus:border-slate-900 shadow-2xs"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold text-slate-400 uppercase">
+                      Max Units
+                    </span>
+                  </div>
+
+                  {/* Max Presets */}
+                  <div>
+                    <span className="text-[9px] font-mono uppercase font-bold text-slate-400 block mb-1">
+                      Quick Max Caps:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {[5000, 10000, 25000, 50000, 100000].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setMaxQuantity(preset)}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                            maxQuantity === preset
+                              ? 'bg-slate-900 text-[#FFED00] shadow-2xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {preset >= 1000 ? `${preset / 1000}k` : preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-tight">
+                    Higher orders automatically route to custom enterprise quoting.
+                  </p>
+                </div>
+              </div>
+
+              {/* Real-Time Customer Storefront Quantity Experience Simulation */}
+              <div className="p-4 bg-white rounded-xl border border-amber-200/90 shadow-2xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <RiSparklingFill className="h-4 w-4 text-[#E3A008]" />
+                    <span className="text-xs font-black uppercase text-slate-900 font-mono tracking-wider">
+                      Live Storefront Quantity Experience Preview
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      MOQ: {minQuantity.toLocaleString()} Units
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      Denomination: +{quantityStep.toLocaleString()} Step
+                    </span>
+                  </div>
+                </div>
+
+                {/* Simulated Stepper & Preset Buttons */}
+                <div className="space-y-2.5 pt-1">
+                  <div className="text-[11px] text-slate-600">
+                    Calculated Standard Batch Multiples available to customer:
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      minQuantity,
+                      minQuantity + 1 * quantityStep,
+                      minQuantity + 2 * quantityStep,
+                      minQuantity + 4 * quantityStep,
+                      minQuantity + 9 * quantityStep,
+                      minQuantity + 24 * quantityStep,
+                    ]
+                      .filter((val, idx, arr) => val <= maxQuantity && arr.indexOf(val) === idx)
+                      .slice(0, 6)
+                      .map((val, idx) => (
+                        <div
+                          key={val}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-black flex items-center gap-1.5 ${
+                            idx === 0
+                              ? 'bg-slate-900 text-[#FFED00] border-slate-900 shadow-2xs'
+                              : 'bg-slate-50 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <span>{val.toLocaleString()}</span>
+                          <span className="text-[9px] font-normal uppercase text-slate-400">units</span>
+                          {idx === 0 && (
+                            <span className="text-[8px] bg-amber-400 text-slate-950 px-1 py-0.2 rounded font-black uppercase">
+                              MOQ
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-[11px] text-slate-600">
+                    <div className="flex items-center gap-2 font-mono">
+                      <span className="text-slate-400 uppercase font-bold text-[10px]">Valid Sequence:</span>
+                      <span className="font-bold text-slate-900">
+                        {minQuantity.toLocaleString()}, {(minQuantity + quantityStep).toLocaleString()}, {(minQuantity + 2 * quantityStep).toLocaleString()}, {(minQuantity + 3 * quantityStep).toLocaleString()}, {(minQuantity + 4 * quantityStep).toLocaleString()}... up to {maxQuantity.toLocaleString()}
+                      </span>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400 hidden sm:inline-block">
+                      Step Multiplier Enforced
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Default Product Size (Admin-configured; read-only for customer storefront) */}
+            <div className="md:col-span-2 p-5 bg-gradient-to-br from-slate-50 via-white to-amber-50/20 border border-slate-200 rounded-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 flex items-center justify-center font-bold text-sm shadow-2xs">
+                    <RiRulerLine className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black text-slate-900 uppercase tracking-wider font-mono">
+                      Product Default Size (Fixed Standard Dimensions)
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Configure factory standard manufacturing dimensions manually or choose from presets. Verified for customer storefront.
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase bg-slate-200 text-slate-800 px-2.5 py-1 rounded border border-slate-300 flex-shrink-0 self-start sm:self-center">
                   <RiLockLine className="h-3 w-3" /> Storefront Read-Only
                 </span>
               </div>
 
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={defaultSize}
-                  onChange={(e) => setDefaultSize(e.target.value)}
-                  placeholder="e.g. 89 mm x 54 mm (Standard Visiting Card) or 2.5 x 6 ft"
-                  className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900 placeholder:font-normal placeholder:text-slate-400 shadow-2xs"
-                />
+              {/* Mode Selection Tabs: Presets vs Manual Builder vs Freeform Text */}
+              <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-lg border border-slate-200/80 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setSizeInputMode('PRESET')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    sizeInputMode === 'PRESET'
+                      ? 'bg-white text-slate-950 shadow-2xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ⚡ Quick Industry Presets
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSizeInputMode('BUILDER')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    sizeInputMode === 'BUILDER'
+                      ? 'bg-white text-indigo-950 shadow-2xs border border-indigo-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📐 Manual Dimension Builder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSizeInputMode('RAW')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    sizeInputMode === 'RAW'
+                      ? 'bg-white text-slate-950 shadow-2xs border border-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ✍️ Direct Text Input
+                </button>
+              </div>
 
-                {/* Standard Dimension Quick Presets */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider mr-1">
-                    Quick Presets:
-                  </span>
-                  {[
-                    { label: '89 x 54 mm (Visiting Card)', value: '89 mm x 54 mm (Standard Visiting Card)' },
-                    { label: 'A4 (210 x 297 mm)', value: 'A4 (210 mm x 297 mm)' },
-                    { label: 'A5 (148 x 210 mm)', value: 'A5 (148 mm x 210 mm)' },
-                    { label: 'A3 (297 x 420 mm)', value: 'A3 (297 mm x 420 mm)' },
-                    { label: '2.5 x 6 ft (Standee)', value: '2.5 x 6 ft (800 x 2000 mm Aluminium Base)' },
-                    { label: '3 x 6 ft (Flex Banner)', value: '3 x 6 ft (900 x 1800 mm)' },
-                    { label: '200 x 150 x 60 mm (Box)', value: '200 mm x 150 mm x 60 mm (Custom Presentation Box)' },
-                  ].map((preset) => (
+              {/* MODE 1: MANUAL DIMENSION BUILDER (WIDTH x HEIGHT x DEPTH x UNIT) */}
+              {sizeInputMode === 'BUILDER' && (
+                <div className="p-5 bg-white rounded-xl border border-indigo-200 shadow-2xs space-y-4 animate-in fade-in">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                    <div>
+                      <span className="text-xs font-mono font-black uppercase text-indigo-950 block">
+                        Custom Dimension Matrix (Manual Admin Specs)
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Type custom width, height, thickness and units. Live preview updates immediately.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const w = manualWidth;
+                          const h = manualHeight;
+                          setManualWidth(h);
+                          setManualHeight(w);
+                          const formatted = `${h} ${manualUnit} x ${w} ${manualUnit}${
+                            manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                          }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`;
+                          setDefaultSize(formatted);
+                        }}
+                        className="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[10px] font-mono font-bold border border-indigo-200 transition cursor-pointer flex items-center gap-1"
+                        title="Swap Width and Height"
+                      >
+                        <RiArrowUpDownLine className="h-3 w-3" />
+                        <span>Rotate / Swap (W ↔ H)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                    {/* Width */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Width <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={manualWidth}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setManualWidth(val);
+                            if (val && manualHeight) {
+                              const formatted = `${val} ${manualUnit} x ${manualHeight} ${manualUnit}${
+                                manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                              }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`;
+                              setDefaultSize(formatted);
+                            }
+                          }}
+                          placeholder="e.g. 89"
+                          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-600 shadow-2xs"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 font-bold uppercase">
+                          {manualUnit}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Height */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Height <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={manualHeight}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setManualHeight(val);
+                            if (manualWidth && val) {
+                              const formatted = `${manualWidth} ${manualUnit} x ${val} ${manualUnit}${
+                                manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                              }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`;
+                              setDefaultSize(formatted);
+                            }
+                          }}
+                          placeholder="e.g. 54"
+                          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-600 shadow-2xs"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 font-bold uppercase">
+                          {manualUnit}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Depth / Thickness */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Depth / Thickness (Optional)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={manualDepth}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setManualDepth(val);
+                            if (manualWidth && manualHeight) {
+                              const formatted = `${manualWidth} ${manualUnit} x ${manualHeight} ${manualUnit}${
+                                val ? ` x ${val} ${manualUnit}` : ''
+                              }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`;
+                              setDefaultSize(formatted);
+                            }
+                          }}
+                          placeholder="e.g. 60 (Boxes)"
+                          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-600 shadow-2xs"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400 font-bold uppercase">
+                          {manualUnit}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Unit Selector */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        Measurement Unit <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={manualUnit}
+                        onChange={(e) => {
+                          const unit = e.target.value as any;
+                          setManualUnit(unit);
+                          if (manualWidth && manualHeight) {
+                            const formatted = `${manualWidth} ${unit} x ${manualHeight} ${unit}${
+                              manualDepth ? ` x ${manualDepth} ${unit}` : ''
+                            }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`;
+                            setDefaultSize(formatted);
+                          }
+                        }}
+                        className="w-full bg-white border border-indigo-300 rounded-lg px-3 py-2 text-xs font-bold text-indigo-950 focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
+                      >
+                        <option value="mm">mm (Millimeters - Standard for Cards & Print)</option>
+                        <option value="cm">cm (Centimeters - Standard for Packaging)</option>
+                        <option value="in">in (Inches - Standard for US Formats)</option>
+                        <option value="ft">ft (Feet - Standard for Flex & Standees)</option>
+                        <option value="m">m (Meters - Large Format)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Label / Description & Quick Tags */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[11px] font-bold text-slate-700">
+                        Specification Description / Variant Label (Optional)
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Included in parentheses for customer clarification
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                      <div className="sm:col-span-2">
+                        <input
+                          type="text"
+                          value={manualSizeLabel}
+                          onChange={(e) => {
+                            const label = e.target.value;
+                            setManualSizeLabel(label);
+                            if (manualWidth && manualHeight) {
+                              const formatted = `${manualWidth} ${manualUnit} x ${manualHeight} ${manualUnit}${
+                                manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                              }${label.trim() ? ` (${label.trim()})` : ''}`;
+                              setDefaultSize(formatted);
+                            }
+                          }}
+                          placeholder="e.g. Standard Landscape, Executive Portrait, Custom Die-Cut Box"
+                          className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-indigo-600 shadow-2xs"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-1">
+                        {['Standard Landscape', 'Executive Portrait', 'Square', 'Custom Box'].map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              setManualSizeLabel(tag);
+                              if (manualWidth && manualHeight) {
+                                const formatted = `${manualWidth} ${manualUnit} x ${manualHeight} ${manualUnit}${
+                                  manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                                } (${tag})`;
+                                setDefaultSize(formatted);
+                              }
+                            }}
+                            className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-mono font-bold transition cursor-pointer"
+                          >
+                            +{tag.split(' ')[0]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Manual Size Action Bar */}
+                  <div className="p-3 bg-indigo-50/60 rounded-lg border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-indigo-900 uppercase">
+                        Live Generated Format:
+                      </span>
+                      <span className="text-xs font-mono font-black text-indigo-950 bg-white px-2.5 py-1 rounded border border-indigo-200">
+                        {manualWidth && manualHeight
+                          ? `${manualWidth} ${manualUnit} x ${manualHeight} ${manualUnit}${
+                              manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                            }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`
+                          : 'Enter width and height above'}
+                      </span>
+                    </div>
+
                     <button
-                      key={preset.label}
                       type="button"
-                      onClick={() => setDefaultSize(preset.value)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-mono font-semibold transition-all cursor-pointer ${
-                        defaultSize === preset.value
-                          ? 'bg-slate-900 text-[#FFED00] font-bold shadow-2xs'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
+                      onClick={() => {
+                        if (!manualWidth || !manualHeight) {
+                          alert('Please specify both width and height.');
+                          return;
+                        }
+                        const formatted = `${manualWidth} ${manualUnit} x ${manualHeight} ${manualUnit}${
+                          manualDepth ? ` x ${manualDepth} ${manualUnit}` : ''
+                        }${manualSizeLabel.trim() ? ` (${manualSizeLabel.trim()})` : ''}`;
+                        setDefaultSize(formatted);
+                      }}
+                      className="px-4 py-1.5 bg-indigo-900 hover:bg-indigo-950 text-white font-black text-xs rounded-lg shadow-sm transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer flex-shrink-0"
                     >
-                      {preset.label}
+                      <RiCheckboxCircleLine className="h-4 w-4 text-[#FFED00]" />
+                      <span>Sync & Confirm Manual Size</span>
                     </button>
-                  ))}
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 2: QUICK INDUSTRY PRESETS */}
+              {sizeInputMode === 'PRESET' && (
+                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-3 animate-in fade-in">
+                  <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                    Click any preset to apply standard factory dimensions:
+                  </span>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {[
+                      { label: 'Visiting Card', size: '89 mm x 54 mm (Standard Visiting Card)', category: 'Cards' },
+                      { label: 'Euro Card', size: '90 mm x 50 mm (European Business Card)', category: 'Cards' },
+                      { label: 'Square Card', size: '65 mm x 65 mm (Square Card)', category: 'Cards' },
+                      { label: 'A4 Letterhead', size: 'A4 (210 mm x 297 mm)', category: 'Paper' },
+                      { label: 'A5 Flyer/Note', size: 'A5 (148 mm x 210 mm)', category: 'Paper' },
+                      { label: 'A3 Poster', size: 'A3 (297 mm x 420 mm)', category: 'Paper' },
+                      { label: 'A6 Postcard', size: 'A6 (105 mm x 148 mm)', category: 'Paper' },
+                      { label: 'Standee (2.5x6 ft)', size: '2.5 x 6 ft (800 x 2000 mm Aluminium Base)', category: 'Large Format' },
+                      { label: 'Flex Banner (3x6 ft)', size: '3 x 6 ft (900 x 1800 mm Outdoor Banner)', category: 'Large Format' },
+                      { label: 'Hoarding (4x8 ft)', size: '4 x 8 ft (1200 x 2400 mm Large Format)', category: 'Large Format' },
+                      { label: 'Rigid Box', size: '200 mm x 150 mm x 60 mm (Custom Presentation Box)', category: 'Packaging' },
+                      { label: 'Cube Box', size: '100 mm x 100 mm x 100 mm (Rigid Cube Box)', category: 'Packaging' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.size}
+                        type="button"
+                        onClick={() => setDefaultSize(preset.size)}
+                        className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                          defaultSize === preset.size
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-2xs ring-1 ring-slate-900'
+                            : 'bg-slate-50/70 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className={`text-[10px] font-mono font-bold uppercase ${defaultSize === preset.size ? 'text-[#FFED00]' : 'text-slate-400'}`}>
+                          {preset.category}
+                        </div>
+                        <div className="text-xs font-bold truncate mt-0.5">
+                          {preset.label}
+                        </div>
+                        <div className={`text-[10px] font-mono truncate mt-0.5 ${defaultSize === preset.size ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {preset.size.split('(')[0]}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 3: DIRECT RAW TEXT INPUT */}
+              {sizeInputMode === 'RAW' && (
+                <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2 animate-in fade-in">
+                  <label className="block text-xs font-bold text-slate-800">
+                    Freeform Dimension String
+                  </label>
+                  <input
+                    type="text"
+                    value={defaultSize}
+                    onChange={(e) => setDefaultSize(e.target.value)}
+                    placeholder="e.g. 89 mm x 54 mm (Standard Visiting Card) or 2.5 x 6 ft"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:outline-none focus:border-slate-900 placeholder:font-normal placeholder:text-slate-400 shadow-2xs"
+                  />
+                  <p className="text-[10px] text-slate-500">
+                    Type whatever custom measurements, shapes, or notes you want to display on the storefront.
+                  </p>
+                </div>
+              )}
+
+              {/* CURRENT ACTIVE SIZE STATUS & STOREFRONT LIVE PREVIEW */}
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center font-bold text-base flex-shrink-0 border border-amber-200">
+                    📐
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">
+                        Current Configured Size:
+                      </span>
+                      {defaultSize ? (
+                        <span className="text-xs font-mono font-black text-slate-900">
+                          {defaultSize}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono text-slate-400 italic">
+                          No default size configured
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-500">
+                      Customers will see this verified size badge on the product configurator.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
                   {defaultSize && (
                     <button
                       type="button"
                       onClick={() => setDefaultSize('')}
-                      className="px-2 py-0.5 rounded text-[10px] font-mono text-red-600 hover:bg-red-50 hover:text-red-700 ml-auto"
+                      className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[11px] font-bold transition cursor-pointer"
                     >
                       Clear Size
                     </button>
                   )}
-                </div>
-              </div>
-
-              {/* Live Customer Storefront Preview Badge */}
-              {defaultSize && (
-                <div className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono font-bold text-slate-400 uppercase">
-                      Customer Storefront Preview:
-                    </span>
-                    <span className="font-mono font-bold text-slate-900 text-xs">
-                      {defaultSize}
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                    <RiSparklingFill className="h-3 w-3 text-[#E3A008]" /> Fixed Default Size Active
+                  <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
+                    <RiSparklingFill className="h-3 w-3 text-[#E3A008]" />
+                    {defaultSize ? 'Active' : 'Unset'}
                   </span>
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="md:col-span-2">
@@ -1022,37 +1760,51 @@ export default function AdminProductEditorPage() {
               />
             </div>
           </div>
+
+          {renderBottomTabNavigation('GENERAL')}
         </div>
       )}
 
-      {/* TAB 2: MEDIA GALLERY */}
+      {/* TAB 2: MEDIA GALLERY (PHOTOS & VIDEO DEMOS) */}
       {activeTab === 'MEDIA' && (
         <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-100 pb-4">
             <div>
               <h2 className="text-sm font-black text-zinc-900 uppercase tracking-wider flex items-center gap-2">
-                <RiImage2Line className="h-4 w-4 text-zinc-700" />
-                Product Image Manager
+                <RiFilmLine className="h-4 w-4 text-indigo-600" />
+                Product Media & Video Gallery
               </h2>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Upload multiple high-res product photos from your local disk or URLs, configure primary thumbnails and order.
+                Upload multiple high-res product photos and <strong>product demo videos (MP4, WEBM, MOV)</strong> or add remote stream URLs.
               </p>
             </div>
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={() => {
+                  setUploadMode('URL');
+                  setIsAddImageModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-xs px-3.5 py-2 rounded-lg border border-zinc-300 transition cursor-pointer"
+              >
+                <RiLinkM className="h-4 w-4 text-zinc-600" />
+                <span>Add Video / Image URL</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setUploadMode('FILE');
                   setIsAddImageModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 bg-[#FCDD55] text-zinc-950 font-black text-xs px-3.5 py-2 rounded-lg border border-zinc-900 shadow-sm hover:bg-[#F3CE3E] transition-all"
+                className="flex items-center gap-1.5 bg-[#FCDD55] text-zinc-950 font-black text-xs px-3.5 py-2 rounded-lg border border-zinc-900 shadow-sm hover:bg-[#F3CE3E] transition cursor-pointer active:scale-95"
               >
                 <RiUploadCloud2Line className="h-4 w-4" />
-                <span>Upload Local Image</span>
+                <span>Upload Photos / Video Clip</span>
               </button>
             </div>
           </div>
 
-          {/* Quick Drag & Drop Upload Strip */}
+          {/* Quick Drag & Drop Upload Strip (Photos & Videos) */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -1068,14 +1820,14 @@ export default function AdminProductEditorPage() {
             }}
             className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${
               isDragOver
-                ? 'border-zinc-900 bg-[#FCDD55]/10'
+                ? 'border-indigo-600 bg-indigo-50/50'
                 : 'border-zinc-200 bg-zinc-50/60 hover:border-zinc-400 hover:bg-zinc-50'
             }`}
           >
             <input
               type="file"
               id="quick-image-upload"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml,image/jpg"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml,image/jpg,image/gif,video/mp4,video/webm,video/quicktime,video/ogg,video/m4v"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -1088,85 +1840,130 @@ export default function AdminProductEditorPage() {
               htmlFor="quick-image-upload"
               className="cursor-pointer flex flex-col items-center justify-center gap-2"
             >
-              <div className="h-10 w-10 rounded-full bg-white border border-zinc-200 flex items-center justify-center text-zinc-700 shadow-sm">
+              <div className="h-11 w-11 rounded-full bg-white border border-zinc-200 flex items-center justify-center text-zinc-700 shadow-sm">
                 {isUploading ? (
                   <RiLoader4Line className="h-5 w-5 animate-spin text-zinc-900" />
                 ) : (
-                  <RiUploadCloud2Line className="h-5 w-5" />
+                  <div className="flex items-center gap-1 text-indigo-700">
+                    <RiUploadCloud2Line className="h-5 w-5" />
+                  </div>
                 )}
               </div>
               <div className="text-xs">
-                <span className="font-bold text-zinc-900 underline">Click to upload from local files</span>
-                <span className="text-zinc-500"> or drag and drop images directly here</span>
+                <span className="font-bold text-zinc-900 underline">Click to upload photos or demo videos</span>
+                <span className="text-zinc-500"> or drag and drop media files directly here</span>
               </div>
               <p className="text-[10px] text-zinc-400 font-mono">
-                Supports PNG, JPG, JPEG, WEBP, SVG • Multi-file upload supported
+                📸 Images (PNG, JPG, WEBP, SVG) & 🎥 Videos (MP4, WEBM, MOV up to 100MB) • Multi-upload enabled
               </p>
             </label>
           </div>
 
+          {/* Media Grid Cards */}
           {product.images && product.images.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {product.images.map((img) => (
-                <div
-                  key={img.id}
-                  className={`relative rounded-xl border overflow-hidden bg-zinc-50 flex flex-col justify-between group transition-all duration-200 ${
-                    img.isPrimary ? 'border-zinc-900 ring-2 ring-[#FCDD55] shadow-md' : 'border-zinc-200 hover:border-zinc-400'
-                  }`}
-                >
-                  <div className="relative h-44 w-full bg-zinc-100 overflow-hidden">
-                    <img
-                      src={resolveImageUrl(img.url)}
-                      alt={img.altText || ''}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    {img.isPrimary && (
-                      <span className="absolute top-2 left-2 bg-zinc-900 text-[#FCDD55] text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-zinc-800">
-                        PRIMARY THUMBNAIL
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="p-3 bg-white border-t border-zinc-100 space-y-2">
-                    <p className="text-xs font-bold text-zinc-800 truncate">{img.altText || 'Product Image'}</p>
-                    {img.caption && <p className="text-[10px] text-zinc-500 truncate">{img.caption}</p>}
-
-                    <div className="flex items-center justify-between pt-1 border-t border-zinc-50">
-                      {!img.isPrimary ? (
-                        <button
-                          type="button"
-                          onClick={() => handleSetPrimaryImage(img.id)}
-                          className="text-[10px] font-bold text-zinc-700 hover:text-zinc-900 underline"
-                        >
-                          Set Primary
-                        </button>
+              {product.images.map((img) => {
+                const isVideo = isVideoMedia(img.url);
+                return (
+                  <div
+                    key={img.id}
+                    className={`relative rounded-xl border overflow-hidden bg-zinc-50 flex flex-col justify-between group transition-all duration-200 ${
+                      img.isPrimary ? 'border-zinc-900 ring-2 ring-[#FCDD55] shadow-md' : 'border-zinc-200 hover:border-zinc-400'
+                    }`}
+                  >
+                    <div className="relative h-48 w-full bg-zinc-900 overflow-hidden flex items-center justify-center">
+                      {isVideo ? (
+                        <video
+                          src={resolveImageUrl(img.url)}
+                          controls
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
                       ) : (
-                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-                          <RiCheckboxCircleLine className="h-3.5 w-3.5" />
-                          Default Card
-                        </span>
+                        <img
+                          src={resolveImageUrl(img.url)}
+                          alt={img.altText || ''}
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteImage(img.id)}
-                        className="p-1 rounded text-zinc-400 hover:text-red-600 transition-colors"
-                        title="Delete image"
+                      {/* Video vs Photo Badge */}
+                      <span
+                        className={`absolute top-2 right-2 text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm flex items-center gap-1 ${
+                          isVideo
+                            ? 'bg-indigo-900 text-white border border-indigo-700'
+                            : 'bg-black/60 backdrop-blur-xs text-white'
+                        }`}
                       >
-                        <RiDeleteBin7Line className="h-4 w-4" />
-                      </button>
+                        {isVideo ? (
+                          <>
+                            <RiMovieLine className="h-3 w-3 text-[#FFED00]" />
+                            <span>VIDEO CLIP</span>
+                          </>
+                        ) : (
+                          <>
+                            <RiImage2Line className="h-3 w-3" />
+                            <span>PHOTO</span>
+                          </>
+                        )}
+                      </span>
+
+                      {img.isPrimary && (
+                        <span className="absolute top-2 left-2 bg-zinc-900 text-[#FCDD55] text-[9px] font-mono font-bold px-2 py-0.5 rounded shadow-sm border border-zinc-800">
+                          PRIMARY COVER
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="p-3 bg-white border-t border-zinc-100 space-y-2">
+                      <div className="flex items-center gap-1.5">
+                        {isVideo && <RiPlayCircleLine className="h-3.5 w-3.5 text-indigo-600 flex-shrink-0" />}
+                        <p className="text-xs font-bold text-zinc-800 truncate">{img.altText || (isVideo ? 'Product Demo Video' : 'Product Image')}</p>
+                      </div>
+                      {img.caption && <p className="text-[10px] text-zinc-500 truncate">{img.caption}</p>}
+
+                      <div className="flex items-center justify-between pt-1 border-t border-zinc-50">
+                        {!img.isPrimary ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSetPrimaryImage(img.id)}
+                            className="text-[10px] font-bold text-zinc-700 hover:text-zinc-900 underline cursor-pointer"
+                          >
+                            Set Primary Cover
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
+                            <RiCheckboxCircleLine className="h-3.5 w-3.5" />
+                            Default Showcase
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteImage(img.id)}
+                          className="p-1 rounded text-zinc-400 hover:text-red-600 transition-colors cursor-pointer"
+                          title="Delete media asset"
+                        >
+                          <RiDeleteBin7Line className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="py-12 border-2 border-dashed border-zinc-200 rounded-xl text-center p-8 bg-zinc-50/50">
-              <RiImage2Line className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
-              <p className="text-xs font-bold text-zinc-700">No images added yet</p>
-              <p className="text-xs text-zinc-500 mt-0.5">Upload local image files or drop them in the area above.</p>
+              <div className="flex items-center justify-center gap-2 mb-2 text-zinc-300">
+                <RiImage2Line className="h-10 w-10" />
+                <RiMovieLine className="h-10 w-10 text-indigo-200" />
+              </div>
+              <p className="text-xs font-bold text-zinc-700">No photos or videos added yet</p>
+              <p className="text-xs text-zinc-500 mt-0.5">Upload local photos or product video clips in the area above.</p>
             </div>
           )}
+
+          {renderBottomTabNavigation('MEDIA')}
         </div>
       )}
 
@@ -1297,6 +2094,8 @@ export default function AdminProductEditorPage() {
               <p className="text-xs text-zinc-500 mt-0.5">Click &quot;+ Add Field&quot; to define paper types, dimensions, or finishes.</p>
             </div>
           )}
+
+          {renderBottomTabNavigation('FIELDS')}
         </div>
       )}
 
@@ -1515,6 +2314,8 @@ export default function AdminProductEditorPage() {
               </div>
             )}
           </div>
+
+          {renderBottomTabNavigation('ARTWORK_DESIGN')}
         </div>
       )}
 
@@ -2097,48 +2898,12 @@ export default function AdminProductEditorPage() {
               </div>
             </div>
           </div>
+
+          {renderBottomTabNavigation('PRICING')}
         </div>
       )}
 
-      {/* TAB 6: INVENTORY & MATERIALS */}
-      {activeTab === 'INVENTORY' && (
-        <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm space-y-6">
-          <h2 className="text-sm font-black text-zinc-900 uppercase tracking-wider border-b border-zinc-100 pb-3">
-            Stock & Raw Substrate Linking
-          </h2>
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-zinc-50 border border-zinc-200">
-              <input
-                type="checkbox"
-                id="trackInventory"
-                checked={trackInventory}
-                onChange={(e) => setTrackInventory(e.target.checked)}
-                className="h-4 w-4 rounded accent-zinc-900"
-              />
-              <label htmlFor="trackInventory" className="text-xs font-bold text-zinc-900 cursor-pointer">
-                Track Finished Product Inventory & Restock Alerts
-              </label>
-            </div>
-
-            {trackInventory && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-800 mb-1">Available Stock Units</label>
-                  <input
-                    type="number"
-                    value={stockQuantity}
-                    onChange={(e) => setStockQuantity(Number(e.target.value))}
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs font-mono text-zinc-900"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 7: LIVE STOREFRONT SIMULATOR (USES EXACT SAME CUSTOMER FLOW ENGINE) */}
+      {/* TAB 6: LIVE STOREFRONT SIMULATOR (USES EXACT SAME CUSTOMER FLOW ENGINE) */}
       {activeTab === 'PREVIEW' && (
         <div className="bg-white p-6 rounded-xl border border-zinc-200 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
@@ -2162,6 +2927,7 @@ export default function AdminProductEditorPage() {
               name,
               basePrice,
               minQuantity,
+              quantityStep,
               maxQuantity,
               productionDays,
               defaultSize,
@@ -2175,6 +2941,8 @@ export default function AdminProductEditorPage() {
             }}
             isPreviewMode={true}
           />
+
+          {renderBottomTabNavigation('PREVIEW')}
         </div>
       )}
 
@@ -2185,9 +2953,9 @@ export default function AdminProductEditorPage() {
             {/* Modal Header */}
             <div className="p-4 border-b border-zinc-200 flex items-center justify-between bg-zinc-50">
               <div className="flex items-center gap-2">
-                <RiImageAddLine className="h-5 w-5 text-zinc-800" />
+                <RiFilmLine className="h-5 w-5 text-indigo-700" />
                 <h3 className="text-xs font-black text-zinc-900 uppercase tracking-wider">
-                  Add Product Media Asset
+                  Add Media Asset (Photo or Demo Video)
                 </h3>
               </div>
               <button
@@ -2195,7 +2963,7 @@ export default function AdminProductEditorPage() {
                   setIsAddImageModalOpen(false);
                   clearSelectedFile();
                 }}
-                className="p-1 rounded text-zinc-400 hover:text-zinc-700 transition-colors"
+                className="p-1 rounded text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
               >
                 <RiCloseLine className="h-5 w-5" />
               </button>
@@ -2206,26 +2974,26 @@ export default function AdminProductEditorPage() {
               <button
                 type="button"
                 onClick={() => setUploadMode('FILE')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   uploadMode === 'FILE'
                     ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200'
                     : 'text-zinc-500 hover:text-zinc-900'
                 }`}
               >
                 <RiUploadCloud2Line className="h-4 w-4" />
-                <span>Upload Local File</span>
+                <span>Upload Local File (Image/Video)</span>
               </button>
               <button
                 type="button"
                 onClick={() => setUploadMode('URL')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   uploadMode === 'URL'
                     ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200'
                     : 'text-zinc-500 hover:text-zinc-900'
                 }`}
               >
                 <RiLinkM className="h-4 w-4" />
-                <span>Remote Image URL</span>
+                <span>Remote URL / Stream</span>
               </button>
             </div>
 
@@ -2234,7 +3002,7 @@ export default function AdminProductEditorPage() {
               {uploadMode === 'FILE' && (
                 <div>
                   <label className="block text-xs font-bold text-zinc-800 mb-1.5">
-                    Select Local Image File *
+                    Select Local Image or Video File *
                   </label>
                   {!filePreview ? (
                     <div
@@ -2252,14 +3020,14 @@ export default function AdminProductEditorPage() {
                       }}
                       className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
                         isDragOver
-                          ? 'border-zinc-900 bg-[#FCDD55]/10'
+                          ? 'border-indigo-600 bg-indigo-50/50'
                           : 'border-zinc-300 hover:border-zinc-900 bg-zinc-50/50 hover:bg-zinc-50'
                       }`}
                     >
                       <input
                         type="file"
                         id="modal-image-file"
-                        accept="image/png,image/jpeg,image/webp,image/svg+xml,image/jpg"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml,image/jpg,image/gif,video/mp4,video/webm,video/quicktime,video/ogg,video/m4v"
                         className="hidden"
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
@@ -2268,7 +3036,7 @@ export default function AdminProductEditorPage() {
                         }}
                       />
                       <label htmlFor="modal-image-file" className="cursor-pointer space-y-2 block">
-                        <div className="h-12 w-12 rounded-full bg-white border border-zinc-200 flex items-center justify-center mx-auto text-zinc-700 shadow-sm">
+                        <div className="h-12 w-12 rounded-full bg-white border border-zinc-200 flex items-center justify-center mx-auto text-indigo-700 shadow-sm">
                           <RiUploadCloud2Line className="h-6 w-6" />
                         </div>
                         <div className="text-xs">
@@ -2276,20 +3044,24 @@ export default function AdminProductEditorPage() {
                           <span className="text-zinc-500"> or drag and drop</span>
                         </div>
                         <p className="text-[10px] text-zinc-400 font-mono">
-                          PNG, JPG, WEBP, SVG up to 25MB
+                          PNG, JPG, WEBP, SVG, MP4, WEBM, MOV up to 100MB
                         </p>
                       </label>
                     </div>
                   ) : (
                     <div className="relative rounded-xl border border-zinc-200 bg-zinc-50 p-3 flex items-center gap-3.5">
-                      <div className="h-20 w-24 rounded-lg overflow-hidden bg-zinc-200 border border-zinc-300 flex-shrink-0">
-                        <img src={filePreview} alt="Selected preview" className="h-full w-full object-cover" />
+                      <div className="h-24 w-28 rounded-lg overflow-hidden bg-zinc-900 border border-zinc-300 flex-shrink-0 flex items-center justify-center">
+                        {selectedFile && (selectedFile.type.startsWith('video/') || selectedFile.name.match(/\.(mp4|webm|mov|ogg|m4v|mkv)$/i)) ? (
+                          <video src={filePreview} controls className="h-full w-full object-cover" />
+                        ) : (
+                          <img src={filePreview} alt="Selected preview" className="h-full w-full object-cover" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-bold text-zinc-900 truncate">{selectedFile?.name}</p>
                         <p className="text-[10px] font-mono text-zinc-500 mt-0.5">
                           {selectedFile?.size ? (selectedFile.size / 1024 / 1024).toFixed(2) + ' MB' : ''} •{' '}
-                          {selectedFile?.type || 'image'}
+                          {selectedFile?.type || 'media'}
                         </p>
                         <span className="inline-block mt-1 bg-emerald-100 text-emerald-800 text-[9px] font-bold px-1.5 py-0.5 rounded">
                           Ready to Upload
@@ -2298,7 +3070,7 @@ export default function AdminProductEditorPage() {
                       <button
                         type="button"
                         onClick={clearSelectedFile}
-                        className="p-1.5 text-zinc-400 hover:text-red-600 rounded-lg hover:bg-white transition-colors"
+                        className="p-1.5 text-zinc-400 hover:text-red-600 rounded-lg hover:bg-white transition-colors cursor-pointer"
                         title="Remove selection"
                       >
                         <RiDeleteBin7Line className="h-4 w-4" />
@@ -2311,25 +3083,31 @@ export default function AdminProductEditorPage() {
               {/* REMOTE URL MODE */}
               {uploadMode === 'URL' && (
                 <div>
-                  <label className="block text-xs font-bold text-zinc-800 mb-1">Image URL *</label>
+                  <label className="block text-xs font-bold text-zinc-800 mb-1">
+                    Direct Image / Video Stream URL *
+                  </label>
                   <input
                     type="url"
                     required={uploadMode === 'URL'}
                     value={newImageUrl}
                     onChange={(e) => setNewImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs font-mono"
+                    placeholder="https://example.com/demo.mp4 or https://images.unsplash.com/..."
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs font-mono focus:border-indigo-600 focus:outline-none"
                   />
                   {newImageUrl && (
-                    <div className="mt-2 h-24 rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100">
-                      <img
-                        src={newImageUrl}
-                        alt="URL Preview"
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          (e.target as any).style.display = 'none';
-                        }}
-                      />
+                    <div className="mt-2 h-32 rounded-lg overflow-hidden border border-zinc-200 bg-zinc-900 flex items-center justify-center">
+                      {isVideoMedia(newImageUrl) ? (
+                        <video src={newImageUrl} controls className="h-full w-full object-cover" />
+                      ) : (
+                        <img
+                          src={newImageUrl}
+                          alt="URL Preview"
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.target as any).style.display = 'none';
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
@@ -2427,30 +3205,42 @@ export default function AdminProductEditorPage() {
                     required
                     value={fieldLabel}
                     onChange={(e) => {
-                      setFieldLabel(e.target.value);
-                      if (!fieldKey) {
+                      const val = e.target.value;
+                      setFieldLabel(val);
+                      if (!isFieldKeyTouched) {
                         setFieldKey(
-                          e.target.value
+                          val
                             .toLowerCase()
+                            .trim()
                             .replace(/[^a-z0-9]+/g, '_')
                             .replace(/(^_|_$)+/g, ''),
                         );
                       }
                     }}
                     placeholder="e.g. Paper Substrate"
-                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs"
+                    className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-900 shadow-2xs"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-zinc-800 mb-1">Internal Key *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-zinc-800">Internal Key</label>
+                    <span className="text-[9px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
+                      ✨ Auto-fills from Label
+                    </span>
+                  </div>
                   <input
                     type="text"
-                    required
                     value={fieldKey}
-                    onChange={(e) => setFieldKey(e.target.value)}
-                    placeholder="e.g. paper_stock"
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono"
+                    onChange={(e) => {
+                      setFieldKey(e.target.value);
+                      setIsFieldKeyTouched(true);
+                    }}
+                    placeholder="e.g. paper_substrate"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono font-bold text-zinc-900 focus:bg-white focus:outline-none focus:border-zinc-900 shadow-2xs"
                   />
+                  <p className="text-[10px] text-zinc-400 mt-1">
+                    Used for price formulas & ERP job tickets (auto-generated).
+                  </p>
                 </div>
               </div>
 
@@ -2500,35 +3290,51 @@ export default function AdminProductEditorPage() {
               {/* Initial Options for SELECT / RADIO / TOGGLE */}
               {(fieldType === 'SELECT' || fieldType === 'RADIO' || fieldType === 'TOGGLE') && (
                 <div className="border border-zinc-200 rounded-xl p-3 bg-zinc-50/50 space-y-2">
-                  <span className="text-[11px] font-mono font-bold text-zinc-600 block uppercase">
-                    Initial Options
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono font-bold text-zinc-600 block uppercase">
+                      Initial Options
+                    </span>
+                    <span className="text-[9px] font-mono text-zinc-400">
+                      Option values auto-slugify as you type labels
+                    </span>
+                  </div>
                   {fieldOptions.map((opt, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder="Option Label (e.g. 350 GSM)"
+                        placeholder="Option Label (e.g. 350 GSM Matte)"
                         value={opt.label}
                         onChange={(e) => {
+                          const val = e.target.value;
                           const updated = [...fieldOptions];
-                          updated[idx].label = e.target.value;
-                          if (!updated[idx].value) {
-                            updated[idx].value = e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                          const oldAutoSlug = updated[idx].label
+                            .toLowerCase()
+                            .trim()
+                            .replace(/[^a-z0-9]+/g, '_')
+                            .replace(/(^_|_$)+/g, '');
+                          const isAuto = !updated[idx].value || updated[idx].value === oldAutoSlug;
+                          updated[idx].label = val;
+                          if (isAuto) {
+                            updated[idx].value = val
+                              .toLowerCase()
+                              .trim()
+                              .replace(/[^a-z0-9]+/g, '_')
+                              .replace(/(^_|_$)+/g, '');
                           }
                           setFieldOptions(updated);
                         }}
-                        className="flex-1 bg-white border border-zinc-200 rounded px-2.5 py-1.5 text-xs"
+                        className="flex-1 bg-white border border-zinc-200 rounded px-2.5 py-1.5 text-xs shadow-2xs"
                       />
                       <input
                         type="text"
-                        placeholder="Value (e.g. 350_gsm)"
+                        placeholder="Value (e.g. 350_gsm_matte)"
                         value={opt.value}
                         onChange={(e) => {
                           const updated = [...fieldOptions];
                           updated[idx].value = e.target.value;
                           setFieldOptions(updated);
                         }}
-                        className="w-28 bg-zinc-50 border border-zinc-200 rounded px-2.5 py-1.5 text-xs font-mono"
+                        className="w-28 bg-zinc-50 border border-zinc-200 rounded px-2.5 py-1.5 text-xs font-mono shadow-2xs"
                       />
                       <input
                         type="number"
@@ -2540,14 +3346,14 @@ export default function AdminProductEditorPage() {
                           updated[idx].priceModifier = Number(e.target.value);
                           setFieldOptions(updated);
                         }}
-                        className="w-20 bg-white border border-zinc-200 rounded px-2.5 py-1.5 text-xs font-mono font-bold"
+                        className="w-20 bg-white border border-zinc-200 rounded px-2.5 py-1.5 text-xs font-mono font-bold shadow-2xs"
                       />
                     </div>
                   ))}
                   <button
                     type="button"
                     onClick={() => setFieldOptions([...fieldOptions, { label: '', value: '', priceModifier: 0 }])}
-                    className="text-[10px] font-bold text-zinc-700 hover:text-zinc-900 underline block pt-1"
+                    className="text-[10px] font-bold text-zinc-700 hover:text-zinc-900 underline block pt-1 cursor-pointer"
                   >
                     + Add Another Option
                   </button>
@@ -2600,13 +3406,13 @@ export default function AdminProductEditorPage() {
                 <button
                   type="button"
                   onClick={() => setIsAddFieldModalOpen(false)}
-                  className="px-4 py-2 rounded-lg border text-xs font-bold text-zinc-700"
+                  className="px-4 py-2 rounded-lg border text-xs font-bold text-zinc-700 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#FCDD55] text-zinc-950 font-black text-xs border border-zinc-900"
+                  className="px-5 py-2 rounded-lg bg-[#FCDD55] hover:bg-[#FBBF24] text-zinc-950 font-black text-xs border border-zinc-900 shadow-sm transition active:scale-95 cursor-pointer"
                 >
                   Create Field
                 </button>
@@ -2622,7 +3428,7 @@ export default function AdminProductEditorPage() {
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-sm w-full overflow-hidden">
             <div className="p-4 border-b border-zinc-200 flex items-center justify-between bg-zinc-50">
               <h3 className="text-xs font-black text-zinc-900 uppercase">Add Option to Field</h3>
-              <button onClick={() => setActiveFieldForOption(null)} className="p-1 rounded text-zinc-400">
+              <button onClick={() => setActiveFieldForOption(null)} className="p-1 rounded text-zinc-400 cursor-pointer">
                 <RiCloseLine className="h-5 w-5" />
               </button>
             </div>
@@ -2634,24 +3440,38 @@ export default function AdminProductEditorPage() {
                   required
                   value={newOptionLabel}
                   onChange={(e) => {
-                    setNewOptionLabel(e.target.value);
-                    if (!newOptionValue) {
-                      setNewOptionValue(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+                    const val = e.target.value;
+                    setNewOptionLabel(val);
+                    if (!isNewOptionValueTouched) {
+                      setNewOptionValue(
+                        val
+                          .toLowerCase()
+                          .trim()
+                          .replace(/[^a-z0-9]+/g, '_')
+                          .replace(/(^_|_$)+/g, ''),
+                      );
                     }
                   }}
                   placeholder="e.g. Thermal Velvet Lamination"
-                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs"
+                  className="w-full bg-white border border-zinc-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-zinc-900"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-zinc-800 mb-1">Option Value *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-zinc-800">Option Value</label>
+                  <span className="text-[9px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0.2 rounded">
+                    Auto-slug
+                  </span>
+                </div>
                 <input
                   type="text"
-                  required
                   value={newOptionValue}
-                  onChange={(e) => setNewOptionValue(e.target.value)}
-                  placeholder="e.g. velvet_lami"
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono"
+                  onChange={(e) => {
+                    setNewOptionValue(e.target.value);
+                    setIsNewOptionValueTouched(true);
+                  }}
+                  placeholder="e.g. thermal_velvet_lamination"
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-2 text-xs font-mono font-bold text-zinc-900 focus:bg-white focus:outline-none focus:border-zinc-900"
                 />
               </div>
               <div>
@@ -2668,7 +3488,7 @@ export default function AdminProductEditorPage() {
                 <button
                   type="button"
                   onClick={() => setActiveFieldForOption(null)}
-                  className="px-3.5 py-1.5 rounded-lg border text-xs font-bold text-zinc-700"
+                  className="px-3.5 py-1.5 rounded-lg border text-xs font-bold text-zinc-700 cursor-pointer"
                 >
                   Cancel
                 </button>

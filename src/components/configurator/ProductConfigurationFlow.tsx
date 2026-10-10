@@ -950,84 +950,154 @@ export function ProductConfigurationFlow({
           </div>
 
           <div className="space-y-4">
-            {/* Quick Preset Buttons */}
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-900 block">
-                Standard Batch Presets
-              </label>
-              <span className="text-[11px] font-mono text-slate-400">
-                Bulk volume rates automatically applied
-              </span>
-            </div>
+            {/* Quick Preset Buttons & Stepper */}
+            {(() => {
+              const minQty = Math.max(1, Number(product.minQuantity) || 1);
+              const maxQty = Number(product.maxQuantity) || 100000;
+              const rawStep = Number((product as any).quantityStep);
+              const step = rawStep > 0 ? rawStep : (minQty >= 100 ? 100 : minQty >= 50 ? 50 : 25);
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {[50, 100, 250, 500, 1000, 2500, 5000].map((preset) => {
-                if (preset < (product.minQuantity || 1)) return null;
-                const isSelected = quantity === preset;
-                const estimatedBatchPrice = Number(product.basePrice || 1) * preset;
+              // Standard preset list generated based on MOQ & step
+              const standardPresets = [
+                minQty,
+                minQty + 1 * step,
+                minQty + 2 * step,
+                minQty + 4 * step,
+                minQty + 9 * step,
+                minQty + 19 * step,
+                minQty + 49 * step,
+                minQty + 99 * step,
+              ]
+                .filter((val, idx, arr) => val <= maxQty && arr.indexOf(val) === idx)
+                .slice(0, 8);
 
-                // Check for matched offer tier for this preset
-                let presetOfferDisc = 0;
-                let presetOfferLabel = '';
-                if (quote?.availableOffers && Array.isArray(quote.availableOffers)) {
-                  const matched = quote.availableOffers.find(
-                    (o: any) => preset >= o.minQty && (o.maxQty === null || o.maxQty === undefined || preset <= o.maxQty)
-                  );
-                  if (matched && matched.discountPercent > 0) {
-                    presetOfferDisc = matched.discountPercent;
-                    presetOfferLabel = matched.label || `${matched.discountPercent}% OFF`;
-                  }
-                } else if (product.pricingMatrices && Array.isArray(product.pricingMatrices)) {
-                  const matched = product.pricingMatrices.find(
-                    (m: any) => preset >= m.minQty && (m.maxQty === null || m.maxQty === undefined || preset <= m.maxQty)
-                  );
-                  if (matched) {
-                    const combo = (matched.attributeCombination as any) || {};
-                    const disc = matched.discountPercent ?? combo.discountPercent ?? 0;
-                    if (disc > 0) {
-                      presetOfferDisc = disc;
-                      presetOfferLabel = matched.label || combo.label || `${disc}% OFF`;
-                    }
-                  }
-                }
-
-                return (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setQuantity(preset)}
-                    className={`relative py-3.5 px-4 rounded-xl text-center border transition-all duration-150 cursor-pointer ${
-                      isSelected
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-md ring-2 ring-slate-900'
-                        : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50'
-                    }`}
-                  >
-                    {presetOfferDisc > 0 && (
-                      <span className={`absolute -top-2.5 right-2 px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider shadow-2xs border ${
-                        isSelected
-                          ? 'bg-[#FFED00] text-slate-950 border-amber-300'
-                          : 'bg-emerald-600 text-white border-emerald-700'
-                      }`}>
-                        {presetOfferDisc}% OFF
-                      </span>
-                    )}
-
-                    <div className="flex items-center justify-center gap-1">
-                      <span className={`text-base sm:text-lg font-mono font-black ${isSelected ? 'text-[#FFED00]' : 'text-slate-950'}`}>
-                        {preset.toLocaleString()}
-                      </span>
-                      <span className={`text-[10px] uppercase font-mono ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                        Units
+              return (
+                <div className="space-y-4">
+                  {/* Custom Quantity Stepper */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-slate-900 uppercase font-mono block">
+                          Custom Batch Quantity
+                        </span>
+                        <span className="bg-indigo-100 text-indigo-900 text-[10px] font-mono font-black px-2 py-0.5 rounded border border-indigo-200">
+                          Step: +{step.toLocaleString()} units
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 mt-0.5 block">
+                        Adjust run volume in exact increments of {step.toLocaleString()} units (Min: {minQty.toLocaleString()} units)
                       </span>
                     </div>
 
-                    <div className={`text-xs font-mono font-bold mt-1 ${isSelected ? 'text-emerald-300' : 'text-slate-600'}`}>
-                      {isSelected ? formatCurrency(computedGrandTotal) : formatCurrency(estimatedBatchPrice)}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(Math.max(minQty, quantity - step))}
+                        disabled={quantity <= minQty}
+                        className="h-10 w-10 rounded-xl bg-white border border-slate-300 text-slate-800 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-black text-lg flex items-center justify-center transition shadow-2xs cursor-pointer"
+                        title={`Decrease by ${step} units`}
+                      >
+                        -
+                      </button>
+
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min={minQty}
+                          max={maxQty}
+                          step={step}
+                          value={quantity}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val > 0) setQuantity(val);
+                          }}
+                          className="w-28 sm:w-32 h-10 bg-white border border-slate-300 rounded-xl text-center font-mono font-black text-slate-950 text-base focus:outline-none focus:border-slate-900 shadow-2xs"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setQuantity(Math.min(maxQty, quantity + step))}
+                        disabled={quantity >= maxQty}
+                        className="h-10 w-10 rounded-xl bg-slate-900 text-[#FFED00] hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed font-black text-lg flex items-center justify-center transition shadow-2xs cursor-pointer"
+                        title={`Increase by ${step} units`}
+                      >
+                        +
+                      </button>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
+
+                  {/* Standard Presets Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {standardPresets.map((preset) => {
+                      const isSelected = quantity === preset;
+                      const estimatedBatchPrice = Number(product.basePrice || 1) * preset;
+
+                      // Check for matched offer tier for this preset
+                      let presetOfferDisc = 0;
+                      let presetOfferLabel = '';
+                      if (quote?.availableOffers && Array.isArray(quote.availableOffers)) {
+                        const matched = quote.availableOffers.find(
+                          (o: any) => preset >= o.minQty && (o.maxQty === null || o.maxQty === undefined || preset <= o.maxQty)
+                        );
+                        if (matched && matched.discountPercent > 0) {
+                          presetOfferDisc = matched.discountPercent;
+                          presetOfferLabel = matched.label || `${matched.discountPercent}% OFF`;
+                        }
+                      } else if (product.pricingMatrices && Array.isArray(product.pricingMatrices)) {
+                        const matched = product.pricingMatrices.find(
+                          (m: any) => preset >= m.minQty && (m.maxQty === null || m.maxQty === undefined || preset <= m.maxQty)
+                        );
+                        if (matched) {
+                          const combo = (matched.attributeCombination as any) || {};
+                          const disc = matched.discountPercent ?? combo.discountPercent ?? 0;
+                          if (disc > 0) {
+                            presetOfferDisc = disc;
+                            presetOfferLabel = matched.label || combo.label || `${disc}% OFF`;
+                          }
+                        }
+                      }
+
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setQuantity(preset)}
+                          className={`relative py-3.5 px-4 rounded-xl text-center border transition-all duration-150 cursor-pointer ${
+                            isSelected
+                              ? 'border-slate-900 bg-slate-900 text-white shadow-md ring-2 ring-slate-900'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50'
+                          }`}
+                        >
+                          {presetOfferDisc > 0 && (
+                            <span className={`absolute -top-2.5 right-2 px-1.5 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider shadow-2xs border ${
+                              isSelected
+                                ? 'bg-[#FFED00] text-slate-950 border-amber-300'
+                                : 'bg-emerald-600 text-white border-emerald-700'
+                            }`}>
+                              {presetOfferDisc}% OFF
+                            </span>
+                          )}
+
+                          <div className="flex items-center justify-center gap-1">
+                            <span className={`text-base sm:text-lg font-mono font-black ${isSelected ? 'text-[#FFED00]' : 'text-slate-950'}`}>
+                              {preset.toLocaleString()}
+                            </span>
+                            <span className={`text-[10px] uppercase font-mono ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
+                              Units
+                            </span>
+                          </div>
+
+                          <div className={`text-xs font-mono font-bold mt-1 ${isSelected ? 'text-emerald-300' : 'text-slate-600'}`}>
+                            {isSelected ? formatCurrency(computedGrandTotal) : formatCurrency(estimatedBatchPrice)}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Auto-Applied Offer Notification Banner */}
             {quote?.appliedOffer && (quote.appliedOffer.discountPercent > 0 || quote.appliedOffer.savingsAmount > 0) && (

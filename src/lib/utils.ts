@@ -54,6 +54,22 @@ export function getEstimatedDeliveryText(productionDays: number = 2): {
   };
 }
 
+export function isVideoMedia(url?: string | null): boolean {
+  if (!url) return false;
+  const clean = url.split('?')[0].toLowerCase();
+  return (
+    clean.endsWith('.mp4') ||
+    clean.endsWith('.webm') ||
+    clean.endsWith('.mov') ||
+    clean.endsWith('.ogg') ||
+    clean.endsWith('.m4v') ||
+    clean.endsWith('.mkv') ||
+    url.includes('youtube.com') ||
+    url.includes('youtu.be') ||
+    url.includes('vimeo.com')
+  );
+}
+
 export function resolveArtworkUrl(rawUrl?: string | null): string | null {
   if (!rawUrl) return null;
   const str = String(rawUrl).trim();

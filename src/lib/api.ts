@@ -230,6 +230,7 @@ export interface DynamicProduct {
   pricingModel: string;
   basePrice: number | string;
   minQuantity: number;
+  quantityStep?: number | null;
   maxQuantity: number;
   productionDays: number;
   sortOrder: number;
