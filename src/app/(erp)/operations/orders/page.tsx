@@ -63,81 +63,72 @@ interface StaffAssignee {
 
 const DEFAULT_DESIGNERS: StaffAssignee[] = [
   {
-    id: 'des-01',
-    fullName: 'Anjali Mehta',
-    email: 'anjali.m@printbazzar.com',
+    id: '8f1d34a6-9509-441f-9b02-dab9611999a9',
+    fullName: 'Rahul Verma',
+    email: 'prepress@printbazzar.com',
     role: 'DESIGNER_PREPRESS',
     status: 'AVAILABLE',
-    activeJobs: 4,
+    activeJobs: 2,
     skills: ['Branding', 'Print Design'],
     recommended: true,
   },
   {
-    id: 'des-02',
-    fullName: 'Rahul Sharma',
-    email: 'rahul.s@printbazzar.com',
+    id: 'e04f9529-0bcb-4513-8cfb-1fe85073e8ef',
+    fullName: 'Anjali Mehta',
+    email: 'anjali.m@printbazzar.com',
     role: 'DESIGNER_PREPRESS',
-    status: 'BUSY',
-    activeJobs: 11,
+    status: 'AVAILABLE',
+    activeJobs: 3,
     skills: ['Branding', 'Packaging'],
   },
   {
-    id: 'des-03',
-    fullName: 'Arun Kumar',
-    email: 'arun.k@printbazzar.com',
+    id: '0818f838-7bdd-43a6-b9cd-a960fc07fffa',
+    fullName: 'Rahul Sharma',
+    email: 'rahul.s@printbazzar.com',
     role: 'DESIGNER_PREPRESS',
     status: 'AVAILABLE',
     activeJobs: 2,
-    skills: ['Branding', 'Marketing'],
+    skills: ['Digital', 'Illustrations'],
   },
   {
-    id: 'des-04',
+    id: 'fc170867-44b6-412b-a5fa-e526bb67f080',
     fullName: 'Priya Nair',
     email: 'priya.n@printbazzar.com',
     role: 'DESIGNER_PREPRESS',
     status: 'AVAILABLE',
-    activeJobs: 5,
-    skills: ['Digital', 'Illustrations'],
+    activeJobs: 1,
+    skills: ['Visual Design', 'Proofing'],
   },
 ];
 
 const DEFAULT_OPERATORS: StaffAssignee[] = [
   {
-    id: 'op-01',
+    id: 'b53ac7e3-08b2-4704-9049-4d646b27367f',
+    fullName: 'Manoj Kumar',
+    email: 'operator@printbazzar.com',
+    role: 'PRODUCTION_OPERATOR',
+    status: 'AVAILABLE',
+    activeJobs: 2,
+    skills: ['Sheetfed Offset', 'Brochures', 'Book Printing'],
+    recommended: true,
+  },
+  {
+    id: '61960d33-059a-42c6-9383-a029ec80d141',
     fullName: 'Arun Kumar',
     email: 'arun.print@printbazzar.com',
     role: 'PRODUCTION_OPERATOR',
     status: 'AVAILABLE',
     activeJobs: 2,
     skills: ['Digital Press', 'Business Cards', 'Commercial Print'],
-    recommended: true,
   },
   {
-    id: 'op-02',
-    fullName: 'Manoj Kumar',
-    email: 'manoj.k@printbazzar.com',
-    role: 'PRODUCTION_OPERATOR',
-    status: 'AVAILABLE',
-    activeJobs: 3,
-    skills: ['Sheetfed Offset', 'Brochures', 'Book Printing'],
-  },
-  {
-    id: 'op-03',
+    id: '8f1dd996-65ca-41a6-a629-6d3270a6ffd5',
     fullName: 'Vijay Verma',
     email: 'vijay.v@printbazzar.com',
     role: 'PRODUCTION_OPERATOR',
     status: 'AVAILABLE',
-    activeJobs: 4,
+    activeJobs: 3,
     skills: ['Packaging Line', 'Rigid Boxes', 'Die-Cutter'],
-  },
-  {
-    id: 'op-04',
-    fullName: 'Suresh Patil',
-    email: 'suresh.p@printbazzar.com',
-    role: 'PRODUCTION_OPERATOR',
-    status: 'BUSY',
-    activeJobs: 8,
-    skills: ['Wide Format', 'Banners', 'Roll-up Standees'],
   },
 ];
 
@@ -463,6 +454,12 @@ export default function OrderAssignmentCenterPage() {
   // ─── DRAWER OPEN HANDLER ───────────────────────────────────────────────────
 
   const handleOpenDrawer = (order: any, type: 'DESIGN' | 'PRODUCTION') => {
+    // Immediate Step Validation: If artwork is not approved, force DESIGN assignment
+    if (type === 'PRODUCTION' && order.artworkState !== 'READY') {
+      setLiveToast('⚠️ Artwork is not approved yet. Assign a Prepress Designer first.');
+      type = 'DESIGN';
+    }
+
     setDrawerOrder(order);
     setDrawerType(type);
     setStaffSearch('');
@@ -518,6 +515,12 @@ export default function OrderAssignmentCenterPage() {
 
   const handleConfirmAssignment = async () => {
     if (!drawerOrder || !selectedStaffId) return;
+
+    if (drawerType === 'PRODUCTION' && drawerOrder.artworkState !== 'READY') {
+      alert('Cannot assign Production Operator: Artwork is still pending approval. The immediate next task is Prepress Design.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     const staffList = drawerType === 'DESIGN' ? designers : operators;
@@ -1202,14 +1205,24 @@ export default function OrderAssignmentCenterPage() {
 
                         <button
                           type="button"
-                          onClick={() => handleOpenDrawer(order, 'PRODUCTION')}
+                          onClick={() => {
+                            if (order.artworkState !== 'READY') {
+                              setLiveToast('⚠️ Artwork must be approved before assigning Production Operator. Immediate task: Prepress Design.');
+                              handleOpenDrawer(order, 'DESIGN');
+                              return;
+                            }
+                            handleOpenDrawer(order, 'PRODUCTION');
+                          }}
                           className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer shrink-0 ${
-                            order.assignedOperator
+                            order.artworkState !== 'READY'
+                              ? 'bg-slate-100 text-slate-400 hover:bg-slate-200 border border-slate-200'
+                              : order.assignedOperator
                               ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
                               : 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xs'
                           }`}
+                          title={order.artworkState !== 'READY' ? 'Artwork must be approved before assigning Operator' : undefined}
                         >
-                          {order.assignedOperator ? 'Change' : 'Assign'}
+                          {order.artworkState !== 'READY' ? 'Artwork Req' : order.assignedOperator ? 'Change' : 'Assign'}
                         </button>
                       </div>
 
@@ -1346,10 +1359,21 @@ export default function OrderAssignmentCenterPage() {
                           <Button
                             variant="outline"
                             size="xs"
-                            onClick={() => handleOpenDrawer(order, 'PRODUCTION')}
-                            className="bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300 text-[10px] font-bold cursor-pointer"
+                            onClick={() => {
+                              if (order.artworkState !== 'READY') {
+                                setLiveToast('⚠️ Artwork must be approved before assigning Production Operator. Immediate task: Prepress Design.');
+                                handleOpenDrawer(order, 'DESIGN');
+                                return;
+                              }
+                              handleOpenDrawer(order, 'PRODUCTION');
+                            }}
+                            className={order.artworkState !== 'READY'
+                              ? "bg-slate-100 text-slate-400 border-slate-200 text-[10px] font-bold cursor-pointer hover:bg-slate-200"
+                              : "bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300 text-[10px] font-bold cursor-pointer"
+                            }
+                            title={order.artworkState !== 'READY' ? 'Artwork must be approved first' : undefined}
                           >
-                            + Assign Operator
+                            {order.artworkState !== 'READY' ? 'Locked (Artwork Req)' : '+ Assign Operator'}
                           </Button>
                         )}
                       </td>
@@ -1426,12 +1450,20 @@ export default function OrderAssignmentCenterPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (drawerOrder?.artworkState !== 'READY') {
+                      alert('Artwork must be approved before assigning Production Operator. The immediate next task is Prepress Design.');
+                      return;
+                    }
                     setDrawerType('PRODUCTION');
                     const rec = operators.find((o) => o.id === drawerOrder.assignedOperator?.id) || operators.find((o) => o.recommended) || operators[0];
                     setSelectedStaffId(rec?.id || '');
                   }}
+                  disabled={drawerOrder?.artworkState !== 'READY'}
+                  title={drawerOrder?.artworkState !== 'READY' ? 'Artwork must be approved before assigning Production Operator' : undefined}
                   className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                    drawerType === 'PRODUCTION'
+                    drawerOrder?.artworkState !== 'READY'
+                      ? 'opacity-40 cursor-not-allowed text-slate-400'
+                      : drawerType === 'PRODUCTION'
                       ? 'bg-white text-blue-950 shadow-xs border border-blue-200'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
@@ -1440,6 +1472,13 @@ export default function OrderAssignmentCenterPage() {
                   <span>Production Operator</span>
                 </button>
               </div>
+
+              {drawerOrder?.artworkState !== 'READY' && (
+                <div className="mt-2.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-center gap-1.5">
+                  <RiAlertLine className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <span>Immediate Next Task: <strong>Prepress Design</strong>. Artwork must be approved before assigning Production Operator.</span>
+                </div>
+              )}
             </div>
 
             {/* Scrollable Content */}

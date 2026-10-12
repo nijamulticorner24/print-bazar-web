@@ -18,6 +18,7 @@ import {
   RiStore2Line,
   RiPulseLine,
   RiListCheck2,
+  RiListSettingsLine,
 } from 'react-icons/ri';
 
 export interface AdminNavItem {
@@ -107,6 +108,17 @@ export const CANONICAL_ADMIN_NAV: AdminNavItem[] = [
     section: 'CATALOGUE_INVENTORY',
     order: 16,
     description: 'Storefront categories & ordering',
+  },
+  {
+    id: 'attributes',
+    label: 'Product Attributes',
+    href: '/admin/attributes',
+    icon: RiListSettingsLine,
+    requiredPermissions: ['orders.read', 'production.read'],
+    matchMode: 'any',
+    section: 'CATALOGUE_INVENTORY',
+    order: 16.5,
+    description: 'Reusable attribute definitions & option sets',
   },
   {
     id: 'inventory',

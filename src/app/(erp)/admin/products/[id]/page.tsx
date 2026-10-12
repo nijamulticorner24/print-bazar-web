@@ -949,35 +949,17 @@ export default function AdminProductEditorPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-zinc-800 mb-1">Category & Subcategory</label>
+              <label className="block text-xs font-bold text-zinc-800 mb-1">Category</label>
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
                 className="w-full bg-white border border-zinc-200 rounded-lg px-3.5 py-2 text-xs font-bold text-zinc-900 focus:outline-none focus:border-zinc-900"
               >
-                {(() => {
-                  const rootCats = categories.filter((c) => !c.parentId);
-                  return (rootCats.length > 0 ? rootCats : categories).map((root) => {
-                    const children = categories.filter((c) => c.parentId === root.id);
-                    if (children.length === 0) {
-                      return (
-                        <option key={root.id} value={root.id}>
-                          📁 {root.name}
-                        </option>
-                      );
-                    }
-                    return (
-                      <optgroup key={root.id} label={`📁 ${root.name}`}>
-                        <option value={root.id}>• {root.name} (Main Category)</option>
-                        {children.map((sub) => (
-                          <option key={sub.id} value={sub.id}>
-                            ↳ {sub.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    );
-                  });
-                })()}
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    📁 {cat.name}
+                  </option>
+                ))}
               </select>
             </div>
 

@@ -131,6 +131,32 @@ export interface DynamicFieldOption {
   isActive: boolean;
 }
 
+export interface ReusableAttributeOption {
+  label: string;
+  value: string;
+  priceModifierType?: string;
+  priceModifier?: number | string;
+  isDefault?: boolean;
+  isActive?: boolean;
+  imageUrl?: string | null;
+  fileCount?: number | null;
+  fileSlotLabels?: string[];
+  sortOrder?: number;
+}
+
+export interface ReusableAttribute {
+  id: string;
+  name: string;
+  code: string;
+  type: string;
+  description?: string | null;
+  options: ReusableAttributeOption[];
+  sortOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface DynamicField {
   id: string;
   productId: string;
@@ -520,6 +546,26 @@ export const api = {
     fetchApi<PricingRule[]>(`/admin/catalogue/products/${productId}/pricing-rules-batch`, {
       method: 'PUT',
       body: JSON.stringify({ rules }),
+    }),
+
+  // Admin Catalogue: Reusable Attributes Library
+  adminListAttributes: () =>
+    fetchApi<ReusableAttribute[]>('/admin/catalogue/attributes'),
+  adminGetAttributeById: (id: string) =>
+    fetchApi<ReusableAttribute>(`/admin/catalogue/attributes/${id}`),
+  adminCreateAttribute: (data: any) =>
+    fetchApi<ReusableAttribute>('/admin/catalogue/attributes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  adminUpdateAttribute: (id: string, data: any) =>
+    fetchApi<ReusableAttribute>(`/admin/catalogue/attributes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  adminDeleteAttribute: (id: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/admin/catalogue/attributes/${id}`, {
+      method: 'DELETE',
     }),
 
   // Admin Inventory
