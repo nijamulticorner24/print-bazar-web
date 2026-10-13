@@ -247,6 +247,17 @@ export const CANONICAL_ADMIN_NAV: AdminNavItem[] = [
     description: 'Substrate GSM tables, slabs & cost formulas',
   },
   {
+    id: 'shipping-gst',
+    label: 'Shipping & GST',
+    href: '/admin/shipping-gst',
+    icon: RiTruckLine,
+    requiredPermissions: ['settings.read'],
+    matchMode: 'all',
+    section: 'COMMERCIAL',
+    order: 95,
+    description: 'Regional pincode courier charges, GST tax rates & free shipping rules',
+  },
+  {
     id: 'finance',
     label: 'Payments & Invoices',
     href: '/finance/payments',

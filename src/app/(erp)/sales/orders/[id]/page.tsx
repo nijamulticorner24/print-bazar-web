@@ -246,23 +246,44 @@ export default function OrderDetailPage() {
                   </span>
                 </div>
 
-                {/* Prepress Artwork Inspection */}
-                {item.artworkVersions?.[0] && (
-                  <div className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-900 flex items-center gap-1.5 text-[13px]">
-                        <FileText className="h-4 w-4 text-slate-700" />
-                        <span>{item.artworkVersions[0].originalFileName}</span>
-                      </span>
-                      <span className="font-mono text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {item.artworkVersions[0].status}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 font-mono text-[11px] text-slate-500 pt-1">
-                      <span>DPI: {item.artworkVersions[0].dpi}</span>
-                      <span>PROFILE: {item.artworkVersions[0].colorSpace}</span>
-                      <span>BLEED: {item.artworkVersions[0].bleedMm} mm</span>
-                    </div>
+                {/* Prepress Artwork Inspection for all versions/slots */}
+                {item.artworkVersions && item.artworkVersions.length > 0 && (
+                  <div className="space-y-2">
+                    {item.artworkVersions.map((art: any, artIdx: number) => (
+                      <div key={art.id || artIdx} className="p-3 bg-white rounded-lg border border-slate-200 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-slate-900 flex items-center gap-1.5 text-[13px]">
+                            <FileText className="h-4 w-4 text-purple-700" />
+                            <span className="font-bold">{art.originalFileName}</span>
+                            {art.versionNumber && (
+                              <span className="text-[10px] font-mono bg-purple-50 text-purple-800 px-1.5 py-0.5 rounded font-black border border-purple-200">
+                                Slot/v{art.versionNumber}
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            {art.status}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                          <div className="flex items-center gap-3 font-mono text-[11px] text-slate-500">
+                            <span>DPI: {art.dpi || 300}</span>
+                            <span>PROFILE: {art.colorSpace || 'CMYK'}</span>
+                            <span>BLEED: {art.bleedMm || 2} mm</span>
+                          </div>
+                          {art.fileUrl && (
+                            <a
+                              href={art.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-purple-700 hover:text-purple-950 font-bold text-[11px] underline"
+                            >
+                              Download Artwork
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

@@ -129,6 +129,9 @@ export interface DynamicFieldOption {
   sortOrder: number;
   isDefault: boolean;
   isActive: boolean;
+  imageUrl?: string | null;
+  fileCount?: number | null;
+  fileSlotLabels?: string[];
 }
 
 export interface ReusableAttributeOption {
@@ -142,6 +145,7 @@ export interface ReusableAttributeOption {
   fileCount?: number | null;
   fileSlotLabels?: string[];
   sortOrder?: number;
+  isOptionalAddOn?: boolean;
 }
 
 export interface ReusableAttribute {
@@ -153,6 +157,7 @@ export interface ReusableAttribute {
   options: ReusableAttributeOption[];
   sortOrder: number;
   isActive: boolean;
+  isOptionalAddOn?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -242,6 +247,48 @@ export interface CreatePricingRuleDto {
   unitPrice?: number | null;
   label?: string | null;
   attributeCombination?: Record<string, any> | null;
+}
+
+export interface ShippingGstSettings {
+  id: string;
+  baseShippingFee: number;
+  gstRate: number;
+  freeShippingThreshold: number;
+  isFreeShippingEnabled: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ShippingZone {
+  id: string;
+  zoneName: string;
+  pincodePrefix: string;
+  shippingCharge: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ShippingTaxCalculationResult {
+  subtotal: number;
+  shippingFee: number;
+  baseShippingFee: number;
+  isFreeShippingApplied: boolean;
+  freeShippingThreshold: number;
+  isFreeShippingEnabled: boolean;
+  matchedZone: {
+    id: string;
+    zoneName: string;
+    pincodePrefix: string;
+    shippingCharge: number;
+  } | null;
+  gstRatePercent: number;
+  gstAmount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  deliveryMethod: string;
+  grandTotal: number;
 }
 
 export interface DynamicProduct {
@@ -854,4 +901,42 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data || {}),
     }),
+
+  // ==========================================
+  // SHIPPING & GST API METHODS
+  // ==========================================
+  getShippingGstSettings: () =>
+    fetchApi<ShippingGstSettings>('/shipping-gst/settings'),
+  updateShippingGstSettings: (data: Partial<ShippingGstSettings>) =>
+    fetchApi<ShippingGstSettings>('/shipping-gst/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  listShippingZones: () =>
+    fetchApi<ShippingZone[]>('/shipping-gst/zones'),
+  createShippingZone: (data: { zoneName: string; pincodePrefix: string; shippingCharge: number; isActive?: boolean }) =>
+    fetchApi<ShippingZone>('/shipping-gst/zones', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateShippingZone: (id: string, data: Partial<ShippingZone>) =>
+    fetchApi<ShippingZone>(`/shipping-gst/zones/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteShippingZone: (id: string) =>
+    fetchApi<{ success: boolean; message: string }>(`/shipping-gst/zones/${id}`, {
+      method: 'DELETE',
+    }),
+  calculateShippingAndTax: (data: {
+    subtotal: number;
+    postalCode?: string;
+    deliveryMethod?: 'COURIER' | 'STORE_PICKUP';
+    isInterState?: boolean;
+  }) =>
+    fetchApi<ShippingTaxCalculationResult>('/shipping-gst/calculate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
+

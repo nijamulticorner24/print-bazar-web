@@ -60,6 +60,7 @@ export default function CheckoutPage() {
       unitPrice?: number;
     };
     artworkFile?: any;
+    artworkFiles?: any;
     referenceImage?: any;
     selectedDesignService?: boolean;
     designNotes?: string;
@@ -92,6 +93,20 @@ export default function CheckoutPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
+  // Authoritative Server Shipping & Tax Quote State
+  const [shippingTaxQuote, setShippingTaxQuote] = useState<{
+    shippingFee: number;
+    baseShippingFee: number;
+    isFreeShippingApplied: boolean;
+    freeShippingThreshold: number;
+    isFreeShippingEnabled: boolean;
+    matchedZone: { id: string; zoneName: string; pincodePrefix: string } | null;
+    gstRatePercent: number;
+    gstAmount: number;
+    grandTotal: number;
+  } | null>(null);
+  const [isCalculatingQuote, setIsCalculatingQuote] = useState(false);
+
   // Load cart from sessionStorage or fallback to localStorage
   useEffect(() => {
     let parsed: any = null;
@@ -123,6 +138,10 @@ export default function CheckoutPage() {
       if (parsed.paymentMode === 'SPLIT_50') {
         setPaymentMode('SPLIT_50');
       }
+      const initialPincode = parsed.shippingPincode || (typeof window !== 'undefined' ? localStorage.getItem('pb2_user_pincode') : '') || '';
+      if (initialPincode) {
+        setShippingAddress((prev) => ({ ...prev, postalCode: prev.postalCode || initialPincode }));
+      }
     }
   }, []);
 
@@ -144,8 +163,44 @@ export default function CheckoutPage() {
   }, [user]);
 
   const subtotal = Number(cart?.quote?.subtotal || cart?.totalPrice || 1475);
-  const tax = Number(cart?.quote?.totalTax || Math.round(subtotal * 0.18 * 100) / 100);
-  const shipping = deliveryMethod === 'STORE_PICKUP' ? 0 : Number(cart?.quote?.estimatedShipping || 0);
+
+  // Recalculate shipping & GST authoritatively on delivery pincode or delivery method change
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchQuote = async () => {
+      setIsCalculatingQuote(true);
+      try {
+        const res = await api.calculateShippingAndTax({
+          subtotal,
+          postalCode: shippingAddress.postalCode,
+          deliveryMethod,
+        });
+        if (!isCancelled && res) {
+          setShippingTaxQuote(res);
+        }
+      } catch (err) {
+        console.warn('Failed to calculate shipping/tax quote from server:', err);
+      } finally {
+        if (!isCancelled) setIsCalculatingQuote(false);
+      }
+    };
+
+    fetchQuote();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [subtotal, shippingAddress.postalCode, deliveryMethod]);
+
+  const gstRatePercent = shippingTaxQuote?.gstRatePercent ?? 18;
+  const tax = shippingTaxQuote?.gstAmount ?? Math.round(subtotal * (gstRatePercent / 100) * 100) / 100;
+  const shipping = deliveryMethod === 'STORE_PICKUP'
+    ? 0
+    : (shippingTaxQuote?.shippingFee ?? (Number(cart?.quote?.estimatedShipping) || 150));
+  const isFreeShippingApplied = Boolean(shippingTaxQuote?.isFreeShippingApplied);
+  const freeShippingThreshold = shippingTaxQuote?.freeShippingThreshold ?? 2000;
+  const isFreeShippingEnabled = shippingTaxQuote?.isFreeShippingEnabled ?? true;
+  const matchedZoneName = shippingTaxQuote?.matchedZone?.zoneName;
   const grandTotal = Math.round((subtotal + tax + shipping) * 100) / 100;
 
   const isSplit = paymentMode === 'SPLIT_50';
@@ -209,6 +264,7 @@ export default function CheckoutPage() {
             totalPrice: subtotal,
             specifications: cart?.specificationsSnapshot || cart?.fieldValues || {},
             artworkFile: cart?.artworkFile || null,
+            artworkFiles: cart?.artworkFiles || null,
             referenceImage: cart?.referenceImage || null,
             artworkUrl: cart?.artworkFile?.fileUrl || null,
             artworkStorageKey: cart?.artworkFile?.storageKey || null,
@@ -366,7 +422,7 @@ export default function CheckoutPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2 mt-2">
                       <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                        FREE SHIPPING
+                        {isFreeShippingApplied || shipping === 0 ? 'FREE SHIPPING' : formatCurrency(shipping)}
                       </span>
                       <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
                         ARRIVAL: {getEstimatedDeliveryText((cart as any)?.productionDays || 2).deliveryRange}
@@ -430,6 +486,11 @@ export default function CheckoutPage() {
                       value={shippingAddress.postalCode}
                       onChange={(e) => setShippingAddress({ ...shippingAddress, postalCode: e.target.value })}
                       placeholder="e.g. 400013"
+                      hint={
+                        matchedZoneName
+                          ? `Matched: ${matchedZoneName} (${shipping === 0 ? 'FREE' : formatCurrency(shipping)})`
+                          : undefined
+                      }
                     />
                   </div>
                 </div>
@@ -556,15 +617,39 @@ export default function CheckoutPage() {
                   <span className="font-mono font-bold text-slate-900">{formatCurrency(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
-                  <span>GST (18%)</span>
+                  <span>GST ({gstRatePercent}%)</span>
                   <span className="font-mono font-bold text-slate-900">{formatCurrency(tax)}</span>
                 </div>
-                <div className="flex justify-between text-slate-600">
-                  <span>Shipping</span>
-                  <span className="font-mono font-bold text-emerald-700">
+                <div className="flex justify-between text-slate-600 items-start">
+                  <div>
+                    <span>Shipping</span>
+                    {deliveryMethod === 'COURIER' && matchedZoneName && (
+                      <span className="text-[10px] text-slate-500 block font-sans">
+                        Zone: {matchedZoneName}
+                      </span>
+                    )}
+                    {deliveryMethod === 'STORE_PICKUP' && (
+                      <span className="text-[10px] text-slate-500 block font-sans">
+                        Plant Pickup
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-mono font-bold ${shipping === 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
                     {shipping === 0 ? 'FREE' : formatCurrency(shipping)}
                   </span>
                 </div>
+
+                {/* Free Shipping Alert or Progress Hint */}
+                {deliveryMethod === 'COURIER' && isFreeShippingApplied && (
+                  <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200 text-[11px] text-emerald-800 font-medium">
+                    ✓ Free delivery threshold unlocked on this order!
+                  </div>
+                )}
+                {deliveryMethod === 'COURIER' && isFreeShippingEnabled && freeShippingThreshold > 0 && subtotal < freeShippingThreshold && (
+                  <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-[11px] text-amber-900">
+                    Add <strong>{formatCurrency(freeShippingThreshold - subtotal)}</strong> more for free delivery!
+                  </div>
+                )}
 
                 <div className="pt-3 border-t border-slate-100 flex justify-between items-baseline">
                   <div>

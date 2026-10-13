@@ -1,9 +1,40 @@
 'use client';
 
 import React from 'react';
-import { DynamicField, DynamicFieldOption } from '@/lib/api';
-import { RiCheckLine, RiInformationLine, RiUploadCloud2Line } from 'react-icons/ri';
+import { DynamicField, DynamicFieldOption, resolveImageUrl } from '@/lib/api';
+import {
+  RiCheckLine,
+  RiInformationLine,
+  RiUploadCloud2Line,
+  RiCameraLine,
+  RiFileTextLine,
+  RiDeleteBinLine,
+  RiAlertFill,
+  RiPaletteLine,
+} from 'react-icons/ri';
 import { formatCurrency } from '@/lib/utils';
+import type { FlowArtworkState } from './ProductConfigurationFlow';
+
+export function formatSlotLabel(rawLabel: string): { title: string; placeholder: string } {
+  const clean = (rawLabel || '').trim();
+  if (!clean) return { title: 'ARTWORK FILE', placeholder: 'Click or drag artwork file' };
+
+  const words = clean.replace(/[_-]+/g, ' ').split(' ').filter(Boolean);
+  const baseTitle = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+
+  let displayTitle = baseTitle;
+  const lower = clean.toLowerCase();
+  if (['front', 'back', 'left', 'right', 'top', 'bottom'].includes(lower)) {
+    if (!displayTitle.toLowerCase().includes('side')) {
+      displayTitle = `${displayTitle} Side`;
+    }
+  }
+
+  return {
+    title: displayTitle.toUpperCase(),
+    placeholder: `Click or drag ${displayTitle} file`,
+  };
+}
 
 interface DynamicFieldRendererProps {
   field: DynamicField;
@@ -11,6 +42,14 @@ interface DynamicFieldRendererProps {
   onChange: (value: any) => void;
   error?: string;
   disabled?: boolean;
+  productId?: string;
+  slotFiles?: Record<string, FlowArtworkState>;
+  onSlotFileUpload?: (slotKey: string, file: File) => Promise<void>;
+  onSlotFileRemove?: (slotKey: string) => void;
+  uploadingSlots?: Record<string, boolean>;
+  slotErrors?: Record<string, string>;
+  designNotes?: string;
+  onDesignNotesChange?: (notes: string) => void;
 }
 
 export function DynamicFieldRenderer({
@@ -19,24 +58,25 @@ export function DynamicFieldRenderer({
   onChange,
   error,
   disabled = false,
+  productId,
+  slotFiles = {},
+  onSlotFileUpload,
+  onSlotFileRemove,
+  uploadingSlots = {},
+  slotErrors = {},
+  designNotes,
+  onDesignNotesChange,
 }: DynamicFieldRendererProps) {
   const { type, label, description, placeholder, isRequired, options, validationRules } = field;
+
+  // Selected option resolution
+  const selectedOption = options?.find((opt) => String(opt.value) === String(value));
 
   // Option price modifier badge
   const renderPriceBadge = (opt: DynamicFieldOption, isSelected: boolean) => {
     const mod = Number(opt.priceModifier || 0);
     if (mod === 0) {
-      return (
-        <span
-          className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded transition-colors ${
-            isSelected
-              ? 'bg-slate-900 text-slate-100'
-              : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
-          }`}
-        >
-          Included
-        </span>
-      );
+      return null;
     }
     const sign = mod > 0 ? '+' : '';
     const formatted =
@@ -57,26 +97,25 @@ export function DynamicFieldRenderer({
     );
   };
 
-  // Determine grid layout based on option count
-  const getGridColsClass = (count: number) => {
-    if (count <= 2) return 'grid-cols-1 sm:grid-cols-2';
-    if (count === 3) return 'grid-cols-1 sm:grid-cols-3';
-    return 'grid-cols-1 sm:grid-cols-2';
-  };
+  // Check if options are compact pills (e.g. 2 short options like Yes Please / No Thanks)
+  const isCompactPillLayout =
+    options &&
+    options.length <= 4 &&
+    options.every((o) => (o.label || '').length <= 16 && (!o.priceModifier || Number(o.priceModifier) === 0));
 
   return (
     <div className="space-y-2.5">
       {/* Field Header: Label & Optional Unit/Requirement */}
       <div className="flex items-baseline justify-between">
         <div>
-          <label className="text-xs sm:text-[13px] font-bold text-slate-900 flex items-center gap-1.5 font-sans tracking-tight">
+          <label className="text-xs sm:text-[13px] font-bold text-slate-900 flex items-center gap-1.5 font-sans tracking-tight uppercase">
             <span>{label}</span>
             {isRequired ? (
               <span className="text-amber-600 font-bold text-xs" title="Required field">
                 *
               </span>
             ) : (
-              <span className="text-[10px] font-mono text-slate-400 font-normal">(Optional)</span>
+              <span className="text-[10px] font-mono text-slate-400 font-normal lowercase">(optional)</span>
             )}
           </label>
           {description && (
@@ -98,47 +137,259 @@ export function DynamicFieldRenderer({
         {(type === 'SELECT' || type === 'RADIO' || type === 'MULTI_SELECT') && (
           <div>
             {options && options.length > 0 ? (
-              <div className={`grid gap-2 sm:gap-2.5 ${getGridColsClass(options.length)}`}>
-                {options.map((opt) => {
-                  const isSelected = String(value) === String(opt.value);
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => onChange(opt.value)}
-                      className={`group w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all duration-150 cursor-pointer ${
-                        isSelected
-                          ? 'border-slate-900 bg-amber-50/40 ring-1.5 ring-slate-900 shadow-xs'
-                          : 'border-slate-200/90 bg-white hover:border-slate-400 hover:bg-slate-50/70'
-                      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                        {/* Radio selection circle */}
-                        <div
-                          className={`h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
+              <div>
+                {/* Options Layout */}
+                <div
+                  className={
+                    isCompactPillLayout
+                      ? 'flex flex-wrap items-center gap-2'
+                      : `grid gap-2 sm:gap-2.5 ${options.length === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`
+                  }
+                >
+                  {options.map((opt) => {
+                    const isSelected = String(value) === String(opt.value);
+                    const badge = renderPriceBadge(opt, isSelected);
+
+                    if (isCompactPillLayout) {
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => onChange(opt.value)}
+                          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all duration-150 cursor-pointer ${
                             isSelected
-                              ? 'border-slate-900 bg-slate-900 text-[#FFED00]'
-                              : 'border-slate-300 bg-white group-hover:border-slate-400'
-                          }`}
+                              ? 'border-slate-950 bg-slate-950 text-white shadow-xs ring-1 ring-slate-950'
+                              : 'border-slate-200 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50'
+                          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                          {isSelected && <RiCheckLine className="h-3 w-3 stroke-[3]" />}
-                        </div>
-                        <div className="min-w-0">
-                          <span
-                            className={`text-xs sm:text-[13px] block truncate transition-colors ${
-                              isSelected ? 'font-black text-slate-950' : 'font-semibold text-slate-800'
+                          {isSelected && <RiCheckLine className="h-4 w-4 text-[#FFED00] stroke-[2.5]" />}
+                          <span>{opt.label}</span>
+                          {badge}
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onChange(opt.value)}
+                        className={`group w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all duration-150 cursor-pointer ${
+                          isSelected
+                            ? 'border-slate-950 bg-slate-950 text-white ring-1.5 ring-slate-950 shadow-xs'
+                            : 'border-slate-200/90 bg-white hover:border-slate-400 hover:bg-slate-50/70 text-slate-800'
+                        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div
+                            className={`h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-colors ${
+                              isSelected
+                                ? 'border-[#FFED00] bg-[#FFED00] text-slate-950'
+                                : 'border-slate-300 bg-white group-hover:border-slate-400'
                             }`}
                           >
-                            {opt.label}
-                          </span>
+                            {isSelected && <RiCheckLine className="h-3 w-3 stroke-[3]" />}
+                          </div>
+                          <div className="min-w-0">
+                            <span
+                              className={`text-xs sm:text-[13px] block truncate transition-colors ${
+                                isSelected ? 'font-black text-white' : 'font-semibold text-slate-800'
+                              }`}
+                            >
+                              {opt.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        {badge && <div className="flex-shrink-0">{badge}</div>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* ------------------------------------------------------------- */}
+                {/* DYNAMIC UPLOAD SLOTS SECTION (Admin Configured File Slots)    */}
+                {/* ------------------------------------------------------------- */}
+                {selectedOption?.fileCount && selectedOption.fileCount > 0 ? (
+                  <div className="rounded-2xl border border-purple-200 bg-white p-4 sm:p-5 mt-3.5 space-y-4 shadow-xs animate-in fade-in duration-200">
+                    {Array.from({ length: selectedOption.fileCount }).map((_, slotIdx) => {
+                      const rawSlotLabel =
+                        selectedOption.fileSlotLabels?.[slotIdx] ||
+                        (selectedOption.fileCount === 1 ? 'artwork' : slotIdx === 0 ? 'front' : 'back');
+                      const { title, placeholder } = formatSlotLabel(rawSlotLabel);
+                      const slotKey = rawSlotLabel.toLowerCase().trim();
+                      const uploadedFile = slotFiles?.[slotKey];
+                      const isUploading = Boolean(uploadingSlots?.[slotKey]);
+                      const errorMsg = slotErrors?.[slotKey];
+
+                      return (
+                        <div key={`${slotKey}-${slotIdx}`} className="space-y-1.5">
+                          {/* Slot Header Label */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-xs font-black text-purple-900 tracking-wide font-mono uppercase">
+                              <RiCameraLine className="h-4 w-4 text-purple-700" />
+                              <span>{title}</span>
+                            </div>
+                            {uploadedFile && (
+                              <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                <RiCheckLine className="h-3 w-3 stroke-[3]" /> File Ready
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Hidden File Input */}
+                          <input
+                            type="file"
+                            id={`slot-file-${field.key}-${slotKey}`}
+                            accept=".png,.jpg,.jpeg,.webp,.svg,.pdf"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file && onSlotFileUpload) {
+                                onSlotFileUpload(slotKey, file);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+
+                          {/* If File NOT yet uploaded: Show Purple Dashed Dropzone */}
+                          {!uploadedFile ? (
+                            <label
+                              htmlFor={`slot-file-${field.key}-${slotKey}`}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const file = e.dataTransfer.files?.[0];
+                                if (file && onSlotFileUpload) {
+                                  onSlotFileUpload(slotKey, file);
+                                }
+                              }}
+                              className={`block border-2 border-dashed rounded-xl p-5 text-center transition-all cursor-pointer group ${
+                                isUploading
+                                  ? 'border-purple-400 bg-purple-50/50 cursor-wait'
+                                  : 'border-purple-300 hover:border-purple-600 bg-white hover:bg-purple-50/40'
+                              }`}
+                            >
+                              {isUploading ? (
+                                <div className="flex flex-col items-center justify-center gap-1.5 py-1">
+                                  <div className="h-5 w-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                                  <span className="text-xs font-bold text-purple-900">
+                                    Uploading & Validating Resolution...
+                                  </span>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-sm font-bold text-purple-900 group-hover:text-purple-950">
+                                    {placeholder}
+                                  </div>
+                                  <div className="text-xs text-slate-400 mt-1 font-sans">
+                                    PNG, JPG, WEBP, SVG up to 10MB
+                                  </div>
+                                </>
+                              )}
+                            </label>
+                          ) : (
+                            /* If File IS uploaded: Show Uploaded Card */
+                            <div className="p-3.5 bg-purple-50/30 border border-purple-200 rounded-xl flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {uploadedFile.fileUrl && /\.(png|jpe?g|webp|svg)$/i.test(uploadedFile.originalFileName) ? (
+                                  <img
+                                    src={resolveImageUrl(uploadedFile.fileUrl)}
+                                    alt={title}
+                                    className="h-10 w-10 object-cover rounded-lg border border-purple-200 bg-white flex-shrink-0"
+                                  />
+                                ) : (
+                                  <div className="h-10 w-10 rounded-lg bg-purple-100 text-purple-800 flex items-center justify-center flex-shrink-0 font-bold border border-purple-200">
+                                    <RiFileTextLine className="h-5 w-5" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-slate-900 truncate max-w-[220px] sm:max-w-[340px]">
+                                    {uploadedFile.originalFileName}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-2">
+                                    <span>{(uploadedFile.fileSize / (1024 * 1024)).toFixed(1)} MB</span>
+                                    {uploadedFile.actualMegapixels ? (
+                                      <span>• {uploadedFile.actualMegapixels} MP</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <label
+                                  htmlFor={`slot-file-${field.key}-${slotKey}`}
+                                  className="px-2.5 py-1 text-xs font-bold text-purple-900 bg-white border border-purple-200 hover:bg-purple-50 rounded-lg cursor-pointer transition-colors"
+                                >
+                                  Replace
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => onSlotFileRemove?.(slotKey)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer transition-colors"
+                                  title="Remove file"
+                                >
+                                  <RiDeleteBinLine className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Error Message */}
+                          {errorMsg && (
+                            <p className="text-[11px] font-bold text-rose-600 flex items-center gap-1 mt-1">
+                              <RiAlertFill className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span>{errorMsg}</span>
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* ------------------------------------------------------------- */
+                  /* DESIGN ASSISTANCE CARD (When Yes Please / Design Option chosen)*/
+                  /* ------------------------------------------------------------- */
+                  (!selectedOption?.fileCount &&
+                    (selectedOption?.value === 'yes_please' ||
+                      field.key === 'l' ||
+                      field.label.toLowerCase().includes('design')) && (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 mt-3 space-y-2.5 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-xl bg-slate-900 text-[#FFED00] flex items-center justify-center flex-shrink-0 shadow-2xs">
+                            <RiPaletteLine className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-900 block">
+                              Professional Design Assistance Selected
+                            </span>
+                            <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                              Our prepress creative studio will design and format your print-ready artwork according to your branding requirements.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="pt-1">
+                          <label className="block text-[11px] font-bold text-slate-800 mb-1">
+                            Design Notes & Branding Details (Optional)
+                          </label>
+                          <textarea
+                            value={designNotes || ''}
+                            onChange={(e) => onDesignNotesChange?.(e.target.value)}
+                            placeholder="Enter your logo placement, contact details, text copy, color preferences, or reference notes..."
+                            rows={2}
+                            className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 font-sans shadow-2xs"
+                          />
                         </div>
                       </div>
-
-                      <div className="flex-shrink-0">{renderPriceBadge(opt, isSelected)}</div>
-                    </button>
-                  );
-                })}
+                    ))
+                )}
               </div>
             ) : (
               <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-400 italic font-mono border border-slate-200">
@@ -148,7 +399,7 @@ export function DynamicFieldRenderer({
           </div>
         )}
 
-        {/* 2. TOGGLE (Segmented Switch or Switch control) */}
+        {/* 2. TOGGLE */}
         {type === 'TOGGLE' && (
           <div className="flex items-center gap-2 sm:gap-3">
             {options && options.length > 0 ? (

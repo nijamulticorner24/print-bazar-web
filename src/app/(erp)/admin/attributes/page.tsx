@@ -112,7 +112,7 @@ export default function AdminAttributesPage() {
     ) as SupportedType;
     setFormType(matchedType);
     setIsActive(attr.isActive !== false);
-    setIsOptionalAddOn(false);
+    setIsOptionalAddOn(Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn));
     setFormError(null);
     setFormSuccess(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -139,11 +139,16 @@ export default function AdminAttributesPage() {
       if (editingAttrId) {
         // Update existing attribute
         const current = attributes.find((a) => a.id === editingAttrId);
+        const updatedOptions = (current?.options || []).map((o) => ({
+          ...o,
+          isOptionalAddOn,
+        }));
         await api.adminUpdateAttribute(editingAttrId, {
           name: formName.trim(),
           type: formType,
           isActive,
-          options: current?.options || [],
+          isOptionalAddOn,
+          options: updatedOptions,
         });
         setFormSuccess(`Attribute "${formName.trim()}" updated successfully.`);
       } else {
@@ -159,6 +164,7 @@ export default function AdminAttributesPage() {
                   priceModifierType: 'FIXED',
                   isDefault: true,
                   isActive: true,
+                  isOptionalAddOn,
                 },
               ];
 
@@ -167,6 +173,7 @@ export default function AdminAttributesPage() {
           code: generatedCode,
           type: formType,
           isActive,
+          isOptionalAddOn,
           options: initialOptions,
         });
         setFormSuccess(`Attribute "${formName.trim()}" created successfully.`);
@@ -645,11 +652,18 @@ export default function AdminAttributesPage() {
                         </span>
                       </td>
 
-                      {/* Type */}
+                      {/* Type & Add-on Badge */}
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200/80">
-                          {typeLabel}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200/80">
+                            {typeLabel}
+                          </span>
+                          {Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn) && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Optional Add-on
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Status */}

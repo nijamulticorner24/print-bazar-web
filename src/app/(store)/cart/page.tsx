@@ -250,7 +250,19 @@ export default function CartPage() {
                       <span className="text-[10px] font-mono font-bold text-slate-400 uppercase block">
                         ARTWORK & PREPRESS STATUS
                       </span>
-                      {item.artworkFile ? (
+                      {item.artworkFiles && Object.keys(item.artworkFiles).length > 0 ? (
+                        <div className="space-y-1">
+                          {Object.entries(item.artworkFiles).map(([slotKey, file]: [string, any]) => (
+                            <div key={slotKey} className="flex items-center gap-1.5 text-emerald-800 font-bold text-[11px]">
+                              <FileCheck className="h-3 w-3 text-emerald-600 flex-shrink-0" />
+                              <span className="uppercase text-[9px] font-mono bg-purple-100 text-purple-900 px-1.5 py-0.5 rounded font-black">
+                                {slotKey.replace(/_/g, ' ')}
+                              </span>
+                              <span className="truncate max-w-[140px] text-slate-800 font-medium">{file.originalFileName}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : item.artworkFile ? (
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
                             <FileCheck className="h-3.5 w-3.5 text-emerald-600" />
