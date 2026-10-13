@@ -24,6 +24,7 @@ import {
   RiCheckboxCircleLine,
   RiCheckDoubleLine,
   RiFileCopyLine,
+  RiTruckLine,
 } from 'react-icons/ri';
 import { formatCurrency } from '@/lib/utils';
 import {
@@ -38,6 +39,7 @@ import {
   PricingRule,
 } from '@/lib/api';
 import { Button, Badge, Modal } from '@/components/ui';
+import { parseQuantityRanges } from '../components/SingleTypePricingTable';
 
 interface ConfiguredAttributeState {
   attributeId: string;
@@ -105,6 +107,99 @@ export default function AdminProductEditorPage() {
   const [specifications, setSpecifications] = useState('');
   const [isFeatured, setIsFeatured] = useState(false);
 
+  // Courier & Delivery Charges State (Alongside Product Configuration)
+  const [shippingChargeType, setShippingChargeType] = useState<'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED'>('DEFAULT');
+  const [unitWeightGrams, setUnitWeightGrams] = useState<number | ''>(2.5);
+  const [courierCharge, setCourierCharge] = useState<number | ''>(100);
+  const [perAdditionalQtyRate, setPerAdditionalQtyRate] = useState<number | ''>(25);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState<number | ''>(1000);
+
+  // Dynamic Delivery Turnaround Handlers
+  const handleDeliveryTimeInput = (val: string) => {
+    const trimmed = val.trim();
+
+    if (!val) {
+      setDeliveryTime('');
+      return;
+    }
+
+    // Direct entry: "1" -> "Single Day Delivery"
+    if (trimmed === '1' || /^1\s*(day|working\s*day)?$/i.test(trimmed)) {
+      setDeliveryTime('Single Day Delivery');
+      setProductionDays(1);
+      return;
+    }
+
+    // Direct entry: range like "2-3", "2 - 3", "3-5"
+    const rangeMatch = trimmed.match(/^(\d+)\s*[-–—]\s*(\d+)(\s*working\s*days?|\s*days?)?$/i);
+    if (rangeMatch) {
+      const min = rangeMatch[1];
+      const max = rangeMatch[2];
+      setDeliveryTime(`${min}-${max} Working Days`);
+      setProductionDays(Number(min) || 2);
+      return;
+    }
+
+    // Direct entry: single integer > 1 like "2", "3", "5"
+    const numMatch = trimmed.match(/^(\d+)(\s*working\s*days?|\s*days?)?$/i);
+    if (numMatch) {
+      const num = parseInt(numMatch[1], 10);
+      if (num === 1) {
+        setDeliveryTime('Single Day Delivery');
+        setProductionDays(1);
+      } else {
+        setDeliveryTime(`${num} Working Days`);
+        setProductionDays(num);
+      }
+      return;
+    }
+
+    // Free text input fallback
+    setDeliveryTime(val);
+    const parsedNum = parseInt(trimmed.match(/\d+/)?.[0] || '', 10);
+    if (!isNaN(parsedNum)) {
+      setProductionDays(parsedNum);
+    }
+  };
+
+  const handleDeliveryTimeBlur = () => {
+    if (!deliveryTime.trim()) {
+      setDeliveryTime('2-3 Working Days');
+      setProductionDays(2);
+      return;
+    }
+    const trimmed = deliveryTime.trim();
+    if (trimmed === '1' || /^1\s*(day|working\s*day)?$/i.test(trimmed)) {
+      setDeliveryTime('Single Day Delivery');
+      setProductionDays(1);
+    } else if (/^(\d+)\s*[-–—]\s*(\d+)$/.test(trimmed)) {
+      setDeliveryTime(`${trimmed} Working Days`);
+    } else if (/^\d+$/.test(trimmed)) {
+      const num = parseInt(trimmed, 10);
+      if (num === 1) {
+        setDeliveryTime('Single Day Delivery');
+        setProductionDays(1);
+      } else {
+        setDeliveryTime(`${num} Working Days`);
+        setProductionDays(num);
+      }
+    }
+  };
+
+  const applyDeliveryPreset = (preset: number | string) => {
+    if (preset === 1 || preset === '1') {
+      setDeliveryTime('Single Day Delivery');
+      setProductionDays(1);
+    } else if (typeof preset === 'number') {
+      setDeliveryTime(`${preset} Working Days`);
+      setProductionDays(preset);
+    } else {
+      setDeliveryTime(`${preset} Working Days`);
+      const min = parseInt(String(preset).split('-')[0], 10);
+      setProductionDays(min || 2);
+    }
+  };
+
   // Reusable Attributes State
   const [selectedAttributes, setSelectedAttributes] = useState<Record<string, ConfiguredAttributeState>>({});
   const [selectedAttributeIdToAdd, setSelectedAttributeIdToAdd] = useState('');
@@ -146,6 +241,18 @@ export default function AdminProductEditorPage() {
     },
   ]);
 
+  // Single-Type Quantity Range Pricing State
+  const [singleQtyRangesInput, setSingleQtyRangesInput] = useState('1-5, 6-10, 11-20');
+  const [singleRangesParseError, setSingleRangesParseError] = useState<string | null>(null);
+  const [singleBasePrices, setSingleBasePrices] = useState<Record<string, number | string>>({
+    '1-5': 200,
+    '6-10': 190,
+    '11-20': 180,
+  });
+  const [singleExtraPrices, setSingleExtraPrices] = useState<
+    Record<string, Record<string, number | string>>
+  >({});
+
   // Image Management
   const [existingImages, setExistingImages] = useState<ProductImageItem[]>([]);
   const [pendingImages, setPendingImages] = useState<PendingImageUpload[]>([]);
@@ -184,12 +291,90 @@ export default function AdminProductEditorPage() {
       setSpecifications(prod.defaultSize || '');
       setProductionDays(prod.productionDays || 2);
       setStockStatus(prod.stockQuantity > 0 ? 'Available' : 'Not Available');
-      setIsFeatured(Boolean(prod.isFeatured));
-      setDeliveryTime((prod as any).deliveryTime || '2-3 Working Days');
+      const deliveryTag = prod.tags?.find((t) => t.startsWith('DELIVERY:'));
+      if (deliveryTag) {
+        setDeliveryTime(deliveryTag.replace('DELIVERY:', ''));
+      } else if (prod.productionDays === 1) {
+        setDeliveryTime('Single Day Delivery');
+      } else if (prod.productionDays && prod.productionDays > 1) {
+        setDeliveryTime(`${prod.productionDays} Working Days`);
+        setDeliveryTime((prod as any).deliveryTime || '2-3 Working Days');
+      }
       setExistingImages(prod.images || []);
 
-      const isSingle = prod.minQuantity === 1 && prod.maxQuantity === 1;
+      // Populate Courier Settings
+      setShippingChargeType((prod.shippingChargeType as any) || 'DEFAULT');
+      setUnitWeightGrams(prod.unitWeightGrams !== null && prod.unitWeightGrams !== undefined ? Number(prod.unitWeightGrams) : 2.5);
+      setCourierCharge(prod.courierCharge !== null && prod.courierCharge !== undefined ? Number(prod.courierCharge) : 100);
+      setPerAdditionalQtyRate(prod.perAdditionalQtyRate !== null && prod.perAdditionalQtyRate !== undefined ? Number(prod.perAdditionalQtyRate) : 25);
+      setFreeShippingThreshold(prod.freeShippingThreshold !== null && prod.freeShippingThreshold !== undefined ? Number(prod.freeShippingThreshold) : 1000);
+
+      const isSingle =
+        prod.pricingModel === 'SINGLE' ||
+        prod.pricingModel === 'SINGLE_RANGE' ||
+        prod.tags?.includes('SINGLE_TYPE') ||
+        (prod.minQuantity === 1 && prod.maxQuantity === 1);
       setQuantityType(isSingle ? 'Single' : 'Variable');
+
+      if (isSingle) {
+        const rangesTag = prod.tags?.find((t) => t.startsWith('RANGES:'));
+        if (rangesTag) {
+          setSingleQtyRangesInput(rangesTag.replace('RANGES:', ''));
+        } else if (rules && rules.length > 0) {
+          const distinctRanges: string[] = [];
+          for (const r of rules) {
+            const key = `${r.minQty}-${r.maxQty}`;
+            if (!distinctRanges.includes(key)) {
+              distinctRanges.push(key);
+            }
+          }
+          if (distinctRanges.length > 0) {
+            setSingleQtyRangesInput(distinctRanges.join(', '));
+          }
+        }
+
+        if (rules && rules.length > 0) {
+          const loadedBasePrices: Record<string, number | string> = {};
+          const loadedExtraPrices: Record<string, Record<string, number | string>> = {};
+
+          for (const r of rules) {
+            const combo = (r.attributeCombination as any) || {};
+            const rangeKey = combo.rangeLabel || `${r.minQty}-${r.maxQty}`;
+            const isBase =
+              combo.isBasePrice === true ||
+              combo.type === 'BASE' ||
+              (!combo.attributeCode && !combo.type) ||
+              Object.keys(combo).filter(
+                (k) => !['label', 'rangeLabel', 'quantityRanges', 'discountPercent', 'offerName', 'isBasePrice', 'type'].includes(k),
+              ).length === 0;
+
+            if (isBase) {
+              loadedBasePrices[rangeKey] = Number(r.unitPrice);
+            } else if (combo.type === 'ATTRIBUTE' || combo.attributeCode) {
+              const attrCode =
+                combo.attributeCode ||
+                Object.keys(combo).find(
+                  (k) => !['type', 'extraPrice', 'label', 'rangeLabel', 'quantityRanges', 'discountPercent', 'offerName', 'isBasePrice'].includes(k),
+                );
+              const attrVal = combo.attributeValue || combo[attrCode || ''];
+              if (attrCode && attrVal) {
+                const uniqueKey = `${attrCode}:${attrVal}`;
+                if (!loadedExtraPrices[uniqueKey]) {
+                  loadedExtraPrices[uniqueKey] = {};
+                }
+                loadedExtraPrices[uniqueKey][rangeKey] = Number(r.unitPrice || combo.extraPrice || 0);
+              }
+            }
+          }
+
+          if (Object.keys(loadedBasePrices).length > 0) {
+            setSingleBasePrices(loadedBasePrices);
+          }
+          if (Object.keys(loadedExtraPrices).length > 0) {
+            setSingleExtraPrices(loadedExtraPrices);
+          }
+        }
+      }
 
       // Populate Reusable Attributes
       const mappedSelectedAttrs: Record<string, ConfiguredAttributeState> = {};
@@ -218,8 +403,10 @@ export default function AdminProductEditorPage() {
         const rawQtys = Array.from(new Set(rules.map((r) => r.minQty))).sort((a, b) => a - b);
         if (rawQtys.length > 0) {
           setStandardQuantities(rawQtys);
-          const customFound = rawQtys.filter((q) => !PRESET_QUANTITIES.includes(q));
-          setCustomQuantities(customFound);
+          if (!isSingle) {
+            const customFound = rawQtys.filter((q) => !PRESET_QUANTITIES.includes(q));
+            setCustomQuantities(customFound);
+          }
         }
 
         // Separate base rules and attribute specific rules
@@ -231,14 +418,32 @@ export default function AdminProductEditorPage() {
           attributes: TierAttributeRule[];
         }>();
 
+        const METADATA_KEYS = new Set([
+          'isBasePrice',
+          'type',
+          'rangeLabel',
+          'quantityRanges',
+          'extraPrice',
+          'attributeCode',
+          'attributeValue',
+          'discountPercent',
+          'label',
+          'offerName',
+        ]);
+
         for (const r of rules) {
           const combo = (r.attributeCombination as any) || {};
-          const comboEntries = Object.entries(combo)
-            .filter(([k]) => k !== 'discountPercent' && k !== 'label' && k !== 'offerName')
+          let comboEntries = Object.entries(combo)
+            .filter(([k]) => !METADATA_KEYS.has(k))
             .sort(([a], [b]) => a.localeCompare(b));
 
+          // If legacy data stored attributeCode & attributeValue as properties instead of { [attrCode]: attrVal }
+          if (comboEntries.length === 0 && combo.attributeCode && combo.attributeValue) {
+            comboEntries = [[combo.attributeCode, String(combo.attributeValue)]];
+          }
+
           const unitP = Number(r.unitPrice) || 0;
-          const totalVal = Math.round(unitP * r.minQty);
+          const totalVal = isSingle ? Number(unitP.toFixed(2)) : Math.round(unitP * r.minQty);
 
           if (comboEntries.length === 0) {
             basePricesByQty[r.minQty] = totalVal;
@@ -287,7 +492,10 @@ export default function AdminProductEditorPage() {
             for (const [qStr, totalVal] of Object.entries(item.extraPrices)) {
               const q = Number(qStr);
               const bPrice = basePricesByQty[q] || 0;
-              relativeExtra[q] = Math.max(0, totalVal - bPrice);
+              const extra = (isSingle && totalVal <= bPrice)
+                ? totalVal
+                : Math.max(0, totalVal - bPrice);
+              relativeExtra[q] = extra;
             }
             return {
               id: `attr-rule-${Date.now()}-${idx}`,
@@ -318,7 +526,9 @@ export default function AdminProductEditorPage() {
           {
             id: 'tier-1',
             name: 'TIER 1',
-            basePrices: { 100: 150, 200: 280, 300: 390, 400: 500, 500: 600 },
+            basePrices: isSingle
+              ? { 1: Math.round(Number(prod.basePrice) || 200) }
+              : { 100: 150, 200: 280, 300: 390, 400: 500, 500: 600 },
             attributes: [],
           },
         ]);
@@ -329,7 +539,7 @@ export default function AdminProductEditorPage() {
             {
               id: 'tier-1',
               name: 'TIER 1',
-              basePrices: { 1: Math.round(Number(prod.basePrice) || 150) },
+              basePrices: { 1: Math.round(Number(prod.basePrice) || 200) },
               attributes: [],
             },
           ]);
@@ -373,6 +583,14 @@ export default function AdminProductEditorPage() {
       },
     });
     setSelectedAttributeIdToAdd('');
+  };
+
+  const handleToggleAttributeForProduct = (attrId: string) => {
+    if (selectedAttributes[attrId]) {
+      handleRemoveAttributeFromProduct(attrId);
+    } else {
+      handleAddAttributeToProduct(attrId);
+    }
   };
 
   const handleRemoveAttributeFromProduct = (attrId: string) => {
@@ -541,28 +759,67 @@ export default function AdminProductEditorPage() {
   // ==========================================
   // COMBINATIONS PRICING GRID HANDLERS
   // ==========================================
+  const parsedSingleRanges = useMemo(() => {
+    if (quantityType !== 'Single') return [];
+    const res = parseQuantityRanges(singleQtyRangesInput);
+    return res.ranges || [];
+  }, [quantityType, singleQtyRangesInput]);
+
+  const handleSingleRangesInputChange = (val: string) => {
+    setSingleQtyRangesInput(val);
+    const res = parseQuantityRanges(val);
+    if (!res.error && res.ranges.length > 0) {
+      setSingleRangesParseError(null);
+      const newQtys = res.ranges.map((r) => r.min);
+      setStandardQuantities(newQtys);
+    } else {
+      setSingleRangesParseError(res.error || 'Please define valid quantity ranges.');
+    }
+  };
+
   const handleQuantityTypeChange = (type: 'Variable' | 'Single') => {
     setQuantityType(type);
     if (type === 'Single') {
-      setStandardQuantities([1]);
-      setPricingTiers((prev) =>
-        prev.map((t) => ({
-          ...t,
-          basePrices: { 1: t.basePrices[1] !== undefined ? t.basePrices[1] : (t.basePrices[100] || 150) },
-        })),
-      );
+      const res = parseQuantityRanges(singleQtyRangesInput);
+      if (res.ranges.length > 0) {
+        setStandardQuantities(res.ranges.map((r) => r.min));
+      } else {
+        setStandardQuantities([1]);
+      }
     } else {
-      if (standardQuantities.length === 1 && standardQuantities[0] === 1) {
+      if (standardQuantities.length <= 1) {
         setStandardQuantities([100, 200, 300, 400, 500]);
-        setPricingTiers((prev) =>
-          prev.map((t) => ({
-            ...t,
-            basePrices: { 100: 150, 200: 280, 300: 390, 400: 500, 500: 600 },
-          })),
-        );
       }
     }
   };
+
+  const gridColumns = useMemo(() => {
+    if (quantityType === 'Single') {
+      if (parsedSingleRanges.length > 0) {
+        return parsedSingleRanges.map((r) => ({
+          qty: r.min,
+          headerLabel: `Qty ${r.label}`,
+          fieldLabel: `Qty ${r.label}`,
+          isSingleRange: true,
+          range: r,
+        }));
+      }
+      return standardQuantities.map((q) => ({
+        qty: q,
+        headerLabel: `Qty ${q}`,
+        fieldLabel: `Qty ${q}`,
+        isSingleRange: true,
+        range: null,
+      }));
+    }
+    return standardQuantities.map((q) => ({
+      qty: q,
+      headerLabel: `Qty ${q.toLocaleString()}`,
+      fieldLabel: `Qty ${q.toLocaleString()}`,
+      isSingleRange: false,
+      range: null,
+    }));
+  }, [quantityType, parsedSingleRanges, standardQuantities]);
 
   const handleToggleQuantityColumn = (qty: number) => {
     if (standardQuantities.includes(qty)) {
@@ -646,10 +903,11 @@ export default function AdminProductEditorPage() {
 
   const handleAddAttributeToTier = (tierId: string, attrCode: string) => {
     const attrConfig = Object.values(selectedAttributes).find((a) => a.code === attrCode);
-    const defaultValue = attrConfig?.enabledOptionValues[0] || '';
+    if (!attrConfig) return;
+    const defaultValue = attrConfig.enabledOptionValues?.[0] || '';
 
-    setPricingTiers(
-      pricingTiers.map((t) => {
+    setPricingTiers((prev) =>
+      prev.map((t) => {
         if (t.id !== tierId) return t;
         const newAttrRule: TierAttributeRule = {
           id: `attr-rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -751,6 +1009,29 @@ export default function AdminProductEditorPage() {
     setPricingTiers(
       pricingTiers.map((t, idx) => (idx === 0 ? t : { ...t, basePrices: { ...sourcePrices } })),
     );
+  };
+
+  const handleDuplicateTier = (sourceTierId?: string) => {
+    if (pricingTiers.length === 0) return;
+    const sourceTier = sourceTierId
+      ? pricingTiers.find((t) => t.id === sourceTierId)
+      : pricingTiers[pricingTiers.length - 1];
+    if (!sourceTier) return;
+
+    const newIdx = pricingTiers.length + 1;
+    const clonedTier: PricingTier = {
+      id: `tier-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: `TIER ${newIdx}`,
+      basePrices: { ...(sourceTier.basePrices || {}) },
+      attributes: (sourceTier.attributes || []).map((attr, aIdx) => ({
+        id: `attr-rule-${Date.now()}-${newIdx}-${aIdx}-${Math.random().toString(36).slice(2, 6)}`,
+        attributeCode: attr.attributeCode,
+        attributeValue: attr.attributeValue,
+        extraPrices: { ...(attr.extraPrices || {}) },
+      })),
+    };
+
+    setPricingTiers((prev) => [...prev, clonedTier]);
   };
 
   const handleUpdateTierExtraPrice = (
@@ -910,16 +1191,42 @@ export default function AdminProductEditorPage() {
         });
       }
 
-      // 2. Base Unit Price from grid
-      const firstTier = pricingTiers[0];
-      const firstQty = standardQuantities[0] || 1;
-      const firstRawPrice = Number(firstTier?.basePrices[firstQty]) || 0;
-      const calculatedBaseUnitPrice =
-        firstRawPrice > 10 || firstQty === 1
-          ? firstRawPrice / firstQty
-          : firstRawPrice > 0
-          ? firstRawPrice
-          : 1.5;
+      // 2. Base Unit Price & Quantity Brackets
+      let calculatedBaseUnitPrice = 1.5;
+      let minQtyToSave = 1;
+      let maxQtyToSave = 100000;
+      let parsedSingleRangesToSave: { min: number; max: number; key: string; label: string }[] = [];
+
+      if (quantityType === 'Single') {
+        const parseRes = parseQuantityRanges(singleQtyRangesInput);
+        if (parseRes.error || parseRes.ranges.length === 0) {
+          setSaveError(parseRes.error || 'Please define valid quantity ranges.');
+          setIsSaving(false);
+          return;
+        }
+        parsedSingleRangesToSave = parseRes.ranges;
+        const firstR = parsedSingleRangesToSave[0];
+        const lastR = parsedSingleRangesToSave[parsedSingleRangesToSave.length - 1];
+        minQtyToSave = firstR.min;
+        maxQtyToSave = lastR.max;
+        const firstTier = pricingTiers[0];
+        calculatedBaseUnitPrice =
+          Number(firstTier?.basePrices[firstR.min]) ||
+          Number(singleBasePrices[firstR.key]) ||
+          200;
+      } else {
+        const firstTier = pricingTiers[0];
+        const firstQty = standardQuantities[0] || 1;
+        const firstRawPrice = Number(firstTier?.basePrices[firstQty]) || 0;
+        calculatedBaseUnitPrice =
+          firstRawPrice > 10 || firstQty === 1
+            ? firstRawPrice / firstQty
+            : firstRawPrice > 0
+            ? firstRawPrice
+            : 1.5;
+        minQtyToSave = firstQty;
+        maxQtyToSave = standardQuantities[standardQuantities.length - 1] || 100000;
+      }
 
       // 3. Update Product via API
       await api.adminUpdateProduct(productId, {
@@ -929,18 +1236,23 @@ export default function AdminProductEditorPage() {
         categoryId: categoryId,
         description: description.trim() || undefined,
         basePrice: Number(calculatedBaseUnitPrice.toFixed(4)),
-        minQuantity: quantityType === 'Single' ? 1 : firstQty,
-        maxQuantity:
-          quantityType === 'Single'
-            ? 1
-            : standardQuantities[standardQuantities.length - 1] || 100000,
+        minQuantity: minQtyToSave,
+        maxQuantity: maxQtyToSave,
         quantityStep: quantityType === 'Single' ? 1 : 100,
         productionDays: Number(productionDays),
-        trackInventory: true,
+        tags: [
+          ...(quantityType === 'Single' ? ['SINGLE_TYPE', `RANGES:${singleQtyRangesInput.trim()}`] : []),
+          `DELIVERY:${deliveryTime.trim()}`,
+        ],
         stockQuantity: stockStatus === 'Available' ? 1000 : 0,
         defaultSize: specifications.trim() || undefined,
         isFeatured: isFeatured,
         status: status,
+        shippingChargeType: shippingChargeType,
+        unitWeightGrams: Number(unitWeightGrams) || 0,
+        courierCharge: Number(courierCharge) || 0,
+        perAdditionalQtyRate: Number(perAdditionalQtyRate) || 0,
+        freeShippingThreshold: Number(freeShippingThreshold) || 0,
         fields: fieldsPayload,
       });
 
@@ -962,96 +1274,179 @@ export default function AdminProductEditorPage() {
         setPendingImages([]);
       }
 
-      // 5. Save Combinations Pricing Grid into PricingMatrix rules
+      // 5. Save Pricing Rules into PricingMatrix
       const rulesPayload: CreatePricingRuleDto[] = [];
-      for (const tier of pricingTiers) {
-        // 5a. Save base rate rule for the tier
-        for (const q of standardQuantities) {
-          const rawPrice = Number(tier.basePrices[q]);
-          if (!isNaN(rawPrice) && rawPrice > 0) {
-            const unitRate = rawPrice > 10 || q === 1 ? rawPrice / q : rawPrice;
-            rulesPayload.push({
-              minQty: q,
-              maxQty: q,
-              unitPrice: Number(unitRate.toFixed(4)),
-              attributeCombination: {},
-              label: `${tier.name} Base Rate`,
-            });
-          }
-        }
 
-        // 5b. Save individual attribute rules with extra prices ONLY for optional add-ons
-        for (const attr of tier.attributes) {
-          if (attr.attributeCode && attr.attributeValue) {
-            const attrConfig = Object.values(selectedAttributes).find((a) => a.code === attr.attributeCode);
-            const isAddOn = Boolean(
-              attrConfig?.isOptionalAddOn ??
-              attributeLibrary.find((a) => a.code === attr.attributeCode)?.isOptionalAddOn ??
-              attributeLibrary.find((a) => a.code === attr.attributeCode)?.options?.[0]?.isOptionalAddOn
+      if (quantityType === 'Single') {
+        for (const tier of pricingTiers) {
+          // 5a. Save base rate rule for the tier for each range
+          for (const r of parsedSingleRangesToSave) {
+            const rawPrice = Number(
+              tier.basePrices[r.min] !== undefined && tier.basePrices[r.min] !== ''
+                ? tier.basePrices[r.min]
+                : singleBasePrices[r.key] || 0,
             );
-
-            // Case B: If Optional add-on is unchecked, do not generate attribute-specific surcharges
-            if (!isAddOn) {
-              continue;
-            }
-
-            const attrDisplayName = attrConfig?.name || attr.attributeCode;
-            const optLabel = getOptionLabel(attr.attributeCode, attr.attributeValue);
-
-            for (const q of standardQuantities) {
-              const basePrice = Number(tier.basePrices[q]) || 0;
-              const extraPrice = Number(attr.extraPrices?.[q]) || 0;
-              const totalPrice = basePrice + extraPrice;
-
-              if (totalPrice > 0) {
-                const unitRate = totalPrice > 10 || q === 1 ? totalPrice / q : totalPrice;
-                rulesPayload.push({
-                  minQty: q,
-                  maxQty: q,
-                  unitPrice: Number(unitRate.toFixed(4)),
-                  attributeCombination: { [attr.attributeCode]: attr.attributeValue },
-                  label: `${tier.name} (${attrDisplayName}: ${optLabel})`,
-                });
-              }
+            if (!isNaN(rawPrice) && rawPrice > 0) {
+              rulesPayload.push({
+                minQty: r.min,
+                maxQty: r.max,
+                unitPrice: Number(rawPrice.toFixed(4)),
+                attributeCombination: {},
+                label: `${tier.name} Base Rate`,
+              });
             }
           }
-        }
 
-        // 5c. If multiple attributes exist in tier, also save the combined rule with sum of optional add-on extra prices
-        if (tier.attributes.length > 1) {
-          const combinedCombo: Record<string, string> = {};
-          const labelParts: string[] = [];
+          // 5b. Individual attribute rules with extra prices for each range
           for (const attr of tier.attributes) {
             if (attr.attributeCode && attr.attributeValue) {
-              combinedCombo[attr.attributeCode] = attr.attributeValue;
-              labelParts.push(`${attr.attributeCode}:${attr.attributeValue}`);
-            }
-          }
-          if (Object.keys(combinedCombo).length > 1) {
-            for (const q of standardQuantities) {
-              const basePrice = Number(tier.basePrices[q]) || 0;
-              let totalExtra = 0;
-              for (const attr of tier.attributes) {
-                const attrConfig = Object.values(selectedAttributes).find((a) => a.code === attr.attributeCode);
-                const isAddOn = Boolean(
-                  attrConfig?.isOptionalAddOn ??
-                  attributeLibrary.find((a) => a.code === attr.attributeCode)?.isOptionalAddOn ??
-                  attributeLibrary.find((a) => a.code === attr.attributeCode)?.options?.[0]?.isOptionalAddOn
+              const attrConfig = Object.values(selectedAttributes).find((a) => a.code === attr.attributeCode);
+              const attrDisplayName = attrConfig?.name || attr.attributeCode;
+              const optLabel = getOptionLabel(attr.attributeCode, attr.attributeValue);
+
+              for (const r of parsedSingleRangesToSave) {
+                const basePrice = Number(
+                  tier.basePrices[r.min] !== undefined && tier.basePrices[r.min] !== ''
+                    ? tier.basePrices[r.min]
+                    : singleBasePrices[r.key] || 0,
                 );
-                if (isAddOn) {
-                  totalExtra += Number(attr.extraPrices?.[q]) || 0;
+                const uniqueKey = `${attr.attributeCode}:${attr.attributeValue}`;
+                const extraPrice = Number(
+                  attr.extraPrices?.[r.min] !== undefined && attr.extraPrices?.[r.min] !== ''
+                    ? attr.extraPrices[r.min]
+                    : singleExtraPrices[uniqueKey]?.[r.key] || 0,
+                );
+                const totalPrice = basePrice + extraPrice;
+
+                if (totalPrice > 0) {
+                  rulesPayload.push({
+                    minQty: r.min,
+                    maxQty: r.max,
+                    unitPrice: Number(totalPrice.toFixed(4)),
+                    attributeCombination: { [attr.attributeCode]: attr.attributeValue },
+                    label: `${tier.name} (${attrDisplayName}: ${optLabel})`,
+                  });
                 }
               }
-              const totalPrice = basePrice + totalExtra;
-              if (totalPrice > 0) {
-                const unitRate = totalPrice > 10 || q === 1 ? totalPrice / q : totalPrice;
-                rulesPayload.push({
-                  minQty: q,
-                  maxQty: q,
-                  unitPrice: Number(unitRate.toFixed(4)),
-                  attributeCombination: combinedCombo,
-                  label: `${tier.name} Combined (${labelParts.join(', ')})`,
-                });
+            }
+          }
+
+          // 5c. Combined combination rules
+          if (tier.attributes.length > 1) {
+            const combinedCombo: Record<string, string> = {};
+            const labelParts: string[] = [];
+            for (const attr of tier.attributes) {
+              if (attr.attributeCode && attr.attributeValue) {
+                combinedCombo[attr.attributeCode] = attr.attributeValue;
+                const optLabel = getOptionLabel(attr.attributeCode, attr.attributeValue);
+                labelParts.push(`${attr.attributeCode}:${optLabel}`);
+              }
+            }
+            if (Object.keys(combinedCombo).length > 1) {
+              for (const r of parsedSingleRangesToSave) {
+                const basePrice = Number(
+                  tier.basePrices[r.min] !== undefined && tier.basePrices[r.min] !== ''
+                    ? tier.basePrices[r.min]
+                    : singleBasePrices[r.key] || 0,
+                );
+                let totalExtra = 0;
+                for (const attr of tier.attributes) {
+                  const uniqueKey = `${attr.attributeCode}:${attr.attributeValue}`;
+                  const extraPrice = Number(
+                    attr.extraPrices?.[r.min] !== undefined && attr.extraPrices?.[r.min] !== ''
+                      ? attr.extraPrices[r.min]
+                      : singleExtraPrices[uniqueKey]?.[r.key] || 0,
+                  );
+                  totalExtra += extraPrice;
+                }
+                const totalPrice = basePrice + totalExtra;
+                if (totalPrice > 0) {
+                  rulesPayload.push({
+                    minQty: r.min,
+                    maxQty: r.max,
+                    unitPrice: Number(totalPrice.toFixed(4)),
+                    attributeCombination: combinedCombo,
+                    label: `${tier.name} Combined (${labelParts.join(', ')})`,
+                  });
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Variable Type Pricing Matrix (100% Unchanged)
+        for (const tier of pricingTiers) {
+          // 5a. Save base rate rule for the tier
+          for (const q of standardQuantities) {
+            const rawPrice = Number(tier.basePrices[q]);
+            if (!isNaN(rawPrice) && rawPrice > 0) {
+              const unitRate = rawPrice > 10 || q === 1 ? rawPrice / q : rawPrice;
+              rulesPayload.push({
+                minQty: q,
+                maxQty: q,
+                unitPrice: Number(unitRate.toFixed(4)),
+                attributeCombination: {},
+                label: `${tier.name} Base Rate`,
+              });
+            }
+          }
+
+          // 5b. Save individual attribute rules with extra prices for each attribute in combination
+          for (const attr of tier.attributes) {
+            if (attr.attributeCode && attr.attributeValue) {
+              const attrConfig = Object.values(selectedAttributes).find((a) => a.code === attr.attributeCode);
+              const attrDisplayName = attrConfig?.name || attr.attributeCode;
+              const optLabel = getOptionLabel(attr.attributeCode, attr.attributeValue);
+
+              for (const q of standardQuantities) {
+                const basePrice = Number(tier.basePrices[q]) || 0;
+                const extraPrice = Number(attr.extraPrices?.[q]) || 0;
+                const totalPrice = basePrice + extraPrice;
+
+                if (totalPrice > 0) {
+                  const unitRate = totalPrice > 10 || q === 1 ? totalPrice / q : totalPrice;
+                  rulesPayload.push({
+                    minQty: q,
+                    maxQty: q,
+                    unitPrice: Number(unitRate.toFixed(4)),
+                    attributeCombination: { [attr.attributeCode]: attr.attributeValue },
+                    label: `${tier.name} (${attrDisplayName}: ${optLabel})`,
+                  });
+                }
+              }
+            }
+          }
+
+          // 5c. If multiple attributes exist in tier, save the combined combination rule
+          // with the sum of all attribute extra prices + base price!
+          if (tier.attributes.length > 1) {
+            const combinedCombo: Record<string, string> = {};
+            const labelParts: string[] = [];
+            for (const attr of tier.attributes) {
+              if (attr.attributeCode && attr.attributeValue) {
+                combinedCombo[attr.attributeCode] = attr.attributeValue;
+                const optLabel = getOptionLabel(attr.attributeCode, attr.attributeValue);
+                labelParts.push(`${attr.attributeCode}:${optLabel}`);
+              }
+            }
+            if (Object.keys(combinedCombo).length > 1) {
+              for (const q of standardQuantities) {
+                const basePrice = Number(tier.basePrices[q]) || 0;
+                let totalExtra = 0;
+                for (const attr of tier.attributes) {
+                  totalExtra += Number(attr.extraPrices?.[q]) || 0;
+                }
+                const totalPrice = basePrice + totalExtra;
+                if (totalPrice > 0) {
+                  const unitRate = totalPrice > 10 || q === 1 ? totalPrice / q : totalPrice;
+                  rulesPayload.push({
+                    minQty: q,
+                    maxQty: q,
+                    unitPrice: Number(unitRate.toFixed(4)),
+                    attributeCombination: combinedCombo,
+                    label: `${tier.name} Combined (${labelParts.join(', ')})`,
+                  });
+                }
               }
             }
           }
@@ -1297,16 +1692,80 @@ export default function AdminProductEditorPage() {
           {/* Row 2: Secondary Fields (Delivery Time, SKU, Slug, Status) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-800 mb-1.5">
-                Delivery Time / Turnaround
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-800">
+                  Delivery Time / Turnaround
+                </label>
+                <span
+                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                    deliveryTime.toLowerCase().includes('single')
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-blue-100 text-blue-800 border border-blue-200'
+                  }`}
+                >
+                  {deliveryTime.toLowerCase().includes('single')
+                    ? '⚡ Single Day Delivery'
+                    : `${productionDays} Working Days`}
+                </span>
+              </div>
               <input
                 type="text"
                 value={deliveryTime}
-                onChange={(e) => setDeliveryTime(e.target.value)}
-                placeholder="2-3 Working Days"
-                className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white"
+                onChange={(e) => handleDeliveryTimeInput(e.target.value)}
+                onBlur={handleDeliveryTimeBlur}
+                placeholder="Enter 1 for Single Day Delivery or 2 for 2 Working Days"
+                className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white transition"
               />
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => applyDeliveryPreset(1)}
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
+                    deliveryTime.toLowerCase().includes('single')
+                      ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="Single Day Delivery (1 Day)"
+                >
+                  ⚡ 1 (Single Day Delivery)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDeliveryPreset(2)}
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
+                    deliveryTime === '2 Working Days'
+                      ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="2 Working Days"
+                >
+                  2 Working Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDeliveryPreset(3)}
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
+                    deliveryTime === '3 Working Days'
+                      ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="3 Working Days"
+                >
+                  3 Working Days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyDeliveryPreset('2-3')}
+                  className={`px-2 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
+                    deliveryTime === '2-3 Working Days'
+                      ? 'bg-slate-900 text-white font-semibold shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title="2-3 Working Days"
+                >
+                  2-3 Working Days
+                </button>
+              </div>
             </div>
 
             <div>
@@ -1381,30 +1840,125 @@ export default function AdminProductEditorPage() {
           </div>
 
           {/* ============================================================ */}
+          {/* SECTION: COURIER & DELIVERY CHARGE SETTINGS */}
+          {/* ============================================================ */}
+          <div className="pt-2 border-t border-slate-100 space-y-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <RiTruckLine className="h-4 w-4 text-slate-800" />
+                <span>Courier & Delivery Charge Configuration</span>
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Configure item-specific courier charge rules, unit piece weight (in grams), and quantity-wise surcharges.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4 bg-slate-50/80 rounded-xl border border-slate-200/90 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-800 mb-1">
+                  Courier Calculation Mode
+                </label>
+                <select
+                  value={shippingChargeType}
+                  onChange={(e) => setShippingChargeType(e.target.value as any)}
+                  className="w-full h-9 px-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 font-medium"
+                >
+                  <option value="DEFAULT">DEFAULT (Store Policy)</option>
+                  <option value="FIXED">FIXED (Custom Flat Fee)</option>
+                  <option value="FREE">FREE (Free Delivery)</option>
+                  <option value="QUANTITY_BASED">QUANTITY_BASED</option>
+                  <option value="WEIGHT_BASED">WEIGHT_BASED</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-800 mb-1">
+                  Unit Weight (Grams / pc)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={unitWeightGrams}
+                  onChange={(e) => setUnitWeightGrams(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 2.5"
+                  className="w-full h-9 px-3 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-800 mb-1">
+                  Custom Courier Fee (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={courierCharge}
+                  onChange={(e) => setCourierCharge(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 100"
+                  className="w-full h-9 px-3 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-800 mb-1">
+                  Qty Step Surcharge (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={perAdditionalQtyRate}
+                  onChange={(e) => setPerAdditionalQtyRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 25"
+                  className="w-full h-9 px-3 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-800 mb-1">
+                  Free Shipping Threshold (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={freeShippingThreshold}
+                  onChange={(e) => setFreeShippingThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 1000"
+                  className="w-full h-9 px-3 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ============================================================ */}
           {/* SECTION 2: PRODUCT ATTRIBUTES */}
           {/* ============================================================ */}
           <div className="pt-2 border-t border-slate-100 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <span>Product Attributes</span>
-                  <span className="text-[11px] font-normal font-mono text-slate-400">
-                    ({Object.keys(selectedAttributes).length} selected)
-                  </span>
+                <h3 className="text-base font-bold text-slate-900">
+                  Product Attributes
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Choose the options customers can select for this product.
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Select attributes; all of their values will appear in the pricing grid
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-slate-600 bg-slate-100/90 px-3 py-1 rounded-full border border-slate-200/60 font-mono">
+                  {Object.keys(selectedAttributes).length} of {attributeLibrary.length} active
+                </span>
                 <Link
                   href="/admin/attributes"
                   target="_blank"
-                  className="text-xs text-slate-600 hover:text-slate-950 flex items-center gap-1 font-medium hover:underline mr-1"
+                  className="text-xs text-slate-600 hover:text-slate-950 flex items-center gap-1 font-medium hover:underline ml-2"
+                  title="Manage Reusable Attributes Library in a new tab"
                 >
                   <RiListSettingsLine className="h-3.5 w-3.5" />
-                  <span>Attributes Library</span>
+                  <span>Library</span>
                 </Link>
                 <Button
                   type="button"
@@ -1419,93 +1973,63 @@ export default function AdminProductEditorPage() {
               </div>
             </div>
 
-            {/* Reusable Attributes Library Selector */}
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <span>Available Library Attributes</span>
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-slate-200 text-slate-700 font-semibold">
-                    {attributeLibrary.length}
-                  </span>
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  Click any attribute to attach it to this product
-                </span>
+            {/* Reusable Attributes Grid (8 columns matching reference UI) */}
+            {attributeLibrary.length === 0 ? (
+              <div className="p-8 border border-dashed border-slate-200 rounded-2xl bg-white text-center">
+                <p className="text-xs text-slate-500">
+                  No attributes found in the library. Click "Add Attribute" above to create one.
+                </p>
               </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
+                {attributeLibrary.map((attr) => {
+                  const isActive = Boolean(selectedAttributes[attr.id]);
+                  const optCount = (attr.options || []).length;
+                  const typeLabel = (attr.type || 'select').toLowerCase();
 
-              {/* Clickable Attributes Palette from Library */}
-              {attributeLibrary.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  {attributeLibrary.map((attr) => {
-                    const isAttached = Boolean(selectedAttributes[attr.id]);
-                    return (
-                      <button
-                        key={attr.id}
-                        type="button"
-                        onClick={() => {
-                          if (isAttached) {
-                            handleRemoveAttributeFromProduct(attr.id);
-                          } else {
-                            handleAddAttributeToProduct(attr.id);
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border ${
-                          isAttached
-                            ? 'bg-[#FFED00] border-[#E3A008] text-slate-950 shadow-xs'
-                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-900 hover:bg-slate-50'
-                        }`}
-                      >
-                        {isAttached ? (
-                          <RiCheckLine className="h-3.5 w-3.5 text-slate-950 font-bold" />
-                        ) : (
-                          <RiAddLine className="h-3.5 w-3.5 text-slate-500" />
-                        )}
-                        <span>{attr.name}</span>
-                        <span className="text-[10px] font-normal font-mono text-slate-500">
-                          ({attr.options?.length || 0})
+                  return (
+                    <button
+                      type="button"
+                      key={attr.id}
+                      onClick={() => handleToggleAttributeForProduct(attr.id)}
+                      className={`group text-left rounded-2xl border p-3 flex flex-col justify-between min-h-[92px] transition-all duration-150 cursor-pointer select-none ${
+                        isActive
+                          ? 'border-2 border-slate-900 bg-slate-50/90 shadow-xs ring-1 ring-slate-900/10'
+                          : 'border border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1 w-full">
+                        <span
+                          className={`font-bold text-[11px] sm:text-xs uppercase tracking-wide leading-tight line-clamp-2 ${
+                            isActive ? 'text-slate-950 font-extrabold' : 'text-slate-800'
+                          }`}
+                        >
+                          {attr.name}
                         </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-3 bg-white rounded-lg border border-slate-200 text-center text-xs text-slate-500">
-                  Loading attributes library...
-                </div>
-              )}
+                        {isActive && (
+                          <span className="shrink-0 w-3.5 h-3.5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[9px] font-bold">
+                            ✓
+                          </span>
+                        )}
+                      </div>
 
-              {/* Search & Dropdown Row */}
-              <div className="pt-2 border-t border-slate-200/70 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <select
-                  value={selectedAttributeIdToAdd}
-                  onChange={(e) => setSelectedAttributeIdToAdd(e.target.value)}
-                  className="flex-1 h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900"
-                >
-                  <option value="">-- Or choose from list to attach --</option>
-                  {attributeLibrary
-                    .filter((a) => !selectedAttributes[a.id])
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.code}) - {a.options?.length || 0} values
-                      </option>
-                    ))}
-                </select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleAddAttributeToProduct(selectedAttributeIdToAdd)}
-                  disabled={!selectedAttributeIdToAdd}
-                  className="h-9 text-xs shrink-0"
-                >
-                  <RiAddLine className="h-3.5 w-3.5 mr-1" />
-                  <span>Attach Selected</span>
-                </Button>
+                      <div className="pt-2 mt-auto border-t border-slate-100 group-hover:border-slate-200 transition-colors w-full">
+                        <span
+                          className={`text-[10px] sm:text-[11px] font-normal lowercase tracking-tight ${
+                            isActive ? 'text-slate-600 font-medium' : 'text-slate-400'
+                          }`}
+                        >
+                          {typeLabel} · {optCount} values.
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            )}
 
             {/* Attached Attributes Configuration Cards */}
-            {Object.keys(selectedAttributes).length > 0 ? (
+            {Object.keys(selectedAttributes).length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 {Object.values(selectedAttributes).map((config) => {
                   const sharedAttr = attributeLibrary.find((a) => a.id === config.attributeId);
@@ -1600,10 +2124,6 @@ export default function AdminProductEditorPage() {
                   );
                 })}
               </div>
-            ) : (
-              <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
-                No attributes attached yet. Choose attributes from the library above.
-              </div>
             )}
           </div>
 
@@ -1616,11 +2136,13 @@ export default function AdminProductEditorPage() {
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <span>Combinations Pricing Grid</span>
                   <span className="text-[11px] font-normal font-mono text-slate-400">
-                    ({standardQuantities.length} quantity column{standardQuantities.length === 1 ? '' : 's'}, {pricingTiers.length} variant tier{pricingTiers.length === 1 ? '' : 's'})
+                    ({gridColumns.length} quantity column{gridColumns.length === 1 ? '' : 's'}, {pricingTiers.length} variant tier{pricingTiers.length === 1 ? '' : 's'})
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Configure variant pricing rules, attribute combinations, and standard quantity brackets.
+                  {quantityType === 'Single'
+                    ? 'Configure quantity range pricing rules, attribute combinations, and base rates.'
+                    : 'Configure variant pricing rules, attribute combinations, and standard quantity brackets.'}
                 </p>
               </div>
 
@@ -1637,19 +2159,17 @@ export default function AdminProductEditorPage() {
                   <span>Generate All Variants</span>
                 </Button>
 
-                {pricingTiers.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyPricesToAllTiers}
-                    className="h-8 text-xs shrink-0"
-                    title="Copy Tier 1 quantity prices across all variant tiers"
-                  >
-                    <RiFileCopyLine className="h-3.5 w-3.5 mr-1" />
-                    <span>Copy Tier 1 Prices</span>
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDuplicateTier()}
+                  className="h-8 text-xs shrink-0"
+                  title="Duplicate tier with its attribute combinations and pricing"
+                >
+                  <RiFileCopyLine className="h-3.5 w-3.5 mr-1" />
+                  <span>Duplicate Tier</span>
+                </Button>
 
                 <Button
                   type="button"
@@ -1664,10 +2184,46 @@ export default function AdminProductEditorPage() {
               </div>
             </div>
 
-            {/* Standard Quantities (Columns) Toolbar */}
-            {quantityType !== 'Single' && (
+            {/* Quantity Columns Toolbar: Ranges Toolbar for Single Type, Standard Qtys for Variable Type */}
+            {quantityType === 'Single' ? (
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <span>Quantity Ranges (Columns)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#FFED00] text-slate-950 font-bold border border-[#E3A008]">
+                      Single Type
+                    </span>
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Example: 1-5, 6-10, 11-20 or 1-15, 16-30, 31-45
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={singleQtyRangesInput}
+                  onChange={(e) => handleSingleRangesInputChange(e.target.value)}
+                  placeholder="1-5, 6-10, 11-20"
+                  className="w-full h-9 px-3 text-xs font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900"
+                />
+                {singleRangesParseError ? (
+                  <p className="text-[11px] text-rose-600 font-medium">{singleRangesParseError}</p>
+                ) : (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[11px] text-slate-500 font-mono">Pricing columns:</span>
+                    {parsedSingleRanges.map((r) => (
+                      <span
+                        key={r.key}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-900 text-white"
+                      >
+                        Qty {r.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
               <div className="space-y-1.5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] text-slate-600 font-mono font-semibold mr-1">
                       Standard Quantities:
@@ -1770,16 +2326,16 @@ export default function AdminProductEditorPage() {
                 <thead className="bg-slate-50/70 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-mono font-semibold">
                   <tr>
                     <th className="py-3 px-4 min-w-[300px]">Attributes (Rule)</th>
-                    {standardQuantities.map((qty) => (
-                      <th key={qty} className="py-3 px-3 min-w-[130px] text-center font-mono">
+                    {gridColumns.map((col) => (
+                      <th key={col.qty} className="py-3 px-3 min-w-[130px] text-center font-mono">
                         <div className="flex items-center justify-center gap-1">
-                          <span>Qty {qty.toLocaleString()}</span>
-                          {standardQuantities.length > 1 && (
+                          <span>{col.headerLabel}</span>
+                          {!col.isSingleRange && standardQuantities.length > 1 && (
                             <button
                               type="button"
-                              onClick={() => handleRemoveQuantityColumn(qty)}
+                              onClick={() => handleRemoveQuantityColumn(col.qty)}
                               className="text-slate-300 hover:text-red-500 font-normal text-xs px-0.5"
-                              title={`Remove Qty ${qty}`}
+                              title={`Remove ${col.headerLabel}`}
                             >
                               ×
                             </button>
@@ -1801,95 +2357,116 @@ export default function AdminProductEditorPage() {
                           </span>
 
                           {/* Attribute Rules List */}
-                          {tier.attributes.map((attrRule) => {
-                            const currentAttrConfig = Object.values(selectedAttributes).find(
-                              (a) => a.code === attrRule.attributeCode,
-                            );
-                            const attrDisplayName =
-                              currentAttrConfig?.name || attrRule.attributeCode || 'ATTRIBUTE';
-                            const isAddOn = Boolean(
-                              currentAttrConfig?.isOptionalAddOn ??
-                              attributeLibrary.find((a) => a.code === attrRule.attributeCode)?.isOptionalAddOn ??
-                              attributeLibrary.find((a) => a.code === attrRule.attributeCode)?.options?.[0]?.isOptionalAddOn
-                            );
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-[280px]">
+                            {tier.attributes.map((attrRule) => {
+                              const currentAttrConfig = Object.values(selectedAttributes).find(
+                                (a) => a.code === attrRule.attributeCode,
+                              );
+                              const attrDisplayName =
+                                currentAttrConfig?.name || attrRule.attributeCode || 'ATTRIBUTE';
 
-                            return (
-                              <div key={attrRule.id} className="space-y-1 w-full max-w-[220px]">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5 min-w-0">
+                              return (
+                                <div key={attrRule.id} className="space-y-1 w-full min-w-0">
+                                  <div className="flex items-center justify-between">
                                     <span
-                                      className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate max-w-[120px]"
+                                      className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono truncate max-w-[100px]"
                                       title={attrDisplayName}
                                     >
                                       {attrDisplayName}
                                     </span>
-                                    {isAddOn ? (
-                                      <span className="text-[9px] px-1 py-0.2 rounded font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                        Add-on
-                                      </span>
-                                    ) : (
-                                      <span className="text-[9px] px-1 py-0.2 rounded font-mono text-slate-400 bg-slate-50 border border-slate-200">
-                                        Standard
-                                      </span>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveAttributeFromTier(tier.id, attrRule.id)}
+                                      className="text-red-400 hover:text-red-600 text-xs font-semibold ml-1 transition-colors leading-none"
+                                      title={`Remove ${attrDisplayName}`}
+                                    >
+                                      ✕
+                                    </button>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveAttributeFromTier(tier.id, attrRule.id)}
-                                    className="text-red-500 hover:text-red-700 text-xs font-semibold ml-1 transition-colors"
-                                    title={`Remove ${attrDisplayName}`}
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
 
+                                  <select
+                                    value={attrRule.attributeValue}
+                                    onChange={(e) =>
+                                      handleUpdateTierAttributeValue(tier.id, attrRule.id, e.target.value)
+                                    }
+                                    className="w-full h-8 px-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 shadow-2xs font-medium"
+                                  >
+                                    <option value="">Any / Select</option>
+                                    {currentAttrConfig?.enabledOptionValues.map((val) => (
+                                      <option key={val} value={val}>
+                                        {getOptionLabel(currentAttrConfig.code, val)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* + Add Attribute Value button — only selected attributes for this product */}
+                          <div>
+                            {(() => {
+                              const productAttributes = Object.values(selectedAttributes);
+                              if (productAttributes.length === 0) {
+                                return (
+                                  <span className="text-[11px] text-amber-600 font-medium italic bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1 inline-block">
+                                    Select attributes above first
+                                  </span>
+                                );
+                              }
+
+                              const selectedCodesInTier = new Set(
+                                tier.attributes.map((a) => a.attributeCode.toLowerCase()),
+                              );
+                              // Attached attributes not yet in this tier
+                              const notYetInTier = productAttributes.filter(
+                                (a) => !selectedCodesInTier.has(a.code.toLowerCase()),
+                              );
+                              // Attached attributes already in this tier
+                              const alreadyInTier = productAttributes.filter(
+                                (a) => selectedCodesInTier.has(a.code.toLowerCase()),
+                              );
+
+                              return (
                                 <select
-                                  value={attrRule.attributeValue}
-                                  onChange={(e) =>
-                                    handleUpdateTierAttributeValue(tier.id, attrRule.id, e.target.value)
-                                  }
-                                  className="w-full h-8 px-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 shadow-2xs font-medium"
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleAddAttributeToTier(tier.id, e.target.value);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  value=""
+                                  className="h-7 px-2.5 text-[11px] text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-200 rounded-lg focus:outline-none focus:border-indigo-400 font-semibold cursor-pointer transition-colors"
                                 >
-                                  <option value="">Any / Select</option>
-                                  {currentAttrConfig?.enabledOptionValues.map((val) => (
-                                    <option key={val} value={val}>
-                                      {getOptionLabel(currentAttrConfig.code, val)}
+                                  <option value="" disabled>
+                                    + Add Attribute Value
+                                  </option>
+
+                                  {notYetInTier.map((a) => (
+                                    <option key={a.code} value={a.code}>
+                                      + {a.name}
+                                    </option>
+                                  ))}
+
+                                  {/* If all attributes are already in this tier, keep them available so user is never limited */}
+                                  {alreadyInTier.map((a) => (
+                                    <option key={`again-${a.code}`} value={a.code}>
+                                      + {a.name} {notYetInTier.length === 0 ? '' : '(Add another)'}
                                     </option>
                                   ))}
                                 </select>
-                              </div>
-                            );
-                          })}
-
-                          {/* + Add Attribute Value button */}
-                          <div>
-                            <select
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  handleAddAttributeToTier(tier.id, e.target.value);
-                                  e.target.value = '';
-                                }
-                              }}
-                              defaultValue=""
-                              className="h-7 px-2.5 text-[11px] text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-200 rounded-lg focus:outline-none focus:border-indigo-400 font-semibold cursor-pointer transition-colors"
-                            >
-                              <option value="" disabled>
-                                + Add Attribute Value
-                              </option>
-                              {Object.values(selectedAttributes).map((a) => (
-                                <option key={a.code} value={a.code}>
-                                  + {a.name}
-                                </option>
-                              ))}
-                            </select>
+                              );
+                            })()}
                           </div>
                         </div>
                       </td>
 
                       {/* Qty Price Columns */}
-                      {standardQuantities.map((qty) => {
+                      {gridColumns.map((col) => {
+                        const qty = col.qty;
                         const baseVal = tier.basePrices[qty] ?? '';
                         const numBase = Number(baseVal || 0);
+                        let runningTotal = numBase;
 
                         return (
                           <td key={qty} className="py-3.5 px-3 align-top">
@@ -1897,7 +2474,7 @@ export default function AdminProductEditorPage() {
                               {/* 1. Base Price Input */}
                               <div className="space-y-1">
                                 <span className="text-[10px] text-slate-400 block font-mono">
-                                  Price for Qty {qty.toLocaleString()}
+                                  Price for {col.fieldLabel}
                                 </span>
                                 <input
                                   type="number"
@@ -1911,27 +2488,15 @@ export default function AdminProductEditorPage() {
                                   className="w-full h-9 px-2 text-center text-xs font-mono font-medium bg-slate-50/60 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white transition-all shadow-2xs"
                                 />
                                 <span className="text-[11px] text-slate-500 block font-mono">
-                                  Price: ₹{numBase.toFixed(2)}
+                                  Price: ₹{numBase.toFixed(2)}{col.isSingleRange ? ' / pc' : ''}
                                 </span>
                               </div>
 
-                              {/* 2. Extra Price for each Attribute Rule ONLY if Optional Add-on is checked */}
+                              {/* 2. Extra Price for each Attribute in this combination */}
                               {tier.attributes.map((attrRule) => {
                                 const currentAttrConfig = Object.values(selectedAttributes).find(
                                   (a) => a.code === attrRule.attributeCode,
                                 );
-                                const isAddOn = Boolean(
-                                  currentAttrConfig?.isOptionalAddOn ??
-                                  attributeLibrary.find((a) => a.code === attrRule.attributeCode)?.isOptionalAddOn ??
-                                  attributeLibrary.find((a) => a.code === attrRule.attributeCode)?.options?.[0]?.isOptionalAddOn
-                                );
-
-                                // Case B — Optional add-on is unchecked:
-                                // Do not display the extra-price inputs for that attribute or its values!
-                                if (!isAddOn) {
-                                  return null;
-                                }
-
                                 const attrDisplayName =
                                   currentAttrConfig?.name || attrRule.attributeCode || 'Attribute';
                                 const optLabel = attrRule.attributeValue
@@ -1939,7 +2504,8 @@ export default function AdminProductEditorPage() {
                                   : '';
                                 const extraVal = attrRule.extraPrices?.[qty] ?? '';
                                 const numExtra = Number(extraVal || 0);
-                                const totalPriceWithExtra = numBase + numExtra;
+                                runningTotal += numExtra;
+                                const withThisTotal = runningTotal;
 
                                 return (
                                   <div key={attrRule.id} className="space-y-1">
@@ -1961,28 +2527,75 @@ export default function AdminProductEditorPage() {
                                       className="w-full h-9 px-2 text-center text-xs font-mono font-medium bg-slate-50/60 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white transition-all shadow-2xs"
                                     />
                                     <span className="text-[11px] text-slate-500 block font-mono">
-                                      With this: ₹{totalPriceWithExtra.toFixed(2)}
+                                      With this: ₹{withThisTotal.toFixed(2)}{col.isSingleRange ? ' / pc' : ''}
                                     </span>
                                   </div>
                                 );
                               })}
+
+                              {/* 3. Total Price for this Quantity at the end of the combination */}
+                              {(() => {
+                                const totalExtraForQty = tier.attributes.reduce((sum, a) => {
+                                  const v = Number(a.extraPrices?.[qty] || 0);
+                                  return sum + (isNaN(v) ? 0 : v);
+                                }, 0);
+                                const totalCombinationPrice = numBase + totalExtraForQty;
+                                const unitRate = col.isSingleRange
+                                  ? totalCombinationPrice
+                                  : qty > 0 ? totalCombinationPrice / qty : 0;
+
+                                return (
+                                  <div className="pt-2 mt-2 border-t border-slate-200 bg-emerald-50/70 border border-emerald-200/70 rounded-lg p-2 text-center shadow-2xs">
+                                    <div className="text-[9px] uppercase font-bold text-emerald-800 font-mono tracking-wider">
+                                      Total ({col.fieldLabel})
+                                    </div>
+                                    <div className="text-sm font-bold font-mono text-emerald-700 leading-tight mt-0.5">
+                                      ₹{totalCombinationPrice.toLocaleString('en-IN', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </div>
+                                    {col.isSingleRange ? (
+                                      <div className="text-[9px] text-emerald-600 font-mono mt-0.5">
+                                        ₹{totalCombinationPrice.toFixed(2)}/pc
+                                      </div>
+                                    ) : (
+                                      qty > 1 && totalCombinationPrice > 0 && (
+                                        <div className="text-[9px] text-emerald-600 font-mono mt-0.5">
+                                          ₹{unitRate.toFixed(2)}/unit
+                                        </div>
+                                      )
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </td>
                         );
                       })}
 
-                      {/* Action: Trash Icon */}
+                      {/* Action: Duplicate & Trash */}
                       <td className="py-3.5 px-4 align-top text-center pt-5">
-                        {pricingTiers.length > 1 && (
+                        <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleRemoveTier(tier.id)}
-                            className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors inline-flex items-center justify-center"
-                            title={`Remove ${tier.name}`}
+                            onClick={() => handleDuplicateTier(tier.id)}
+                            className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50 transition-colors inline-flex items-center justify-center"
+                            title={`Duplicate ${tier.name || 'Tier'}`}
                           >
-                            <RiDeleteBin7Line className="h-4 w-4" />
+                            <RiFileCopyLine className="h-4 w-4" />
                           </button>
-                        )}
+                          {pricingTiers.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTier(tier.id)}
+                              className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors inline-flex items-center justify-center"
+                              title={`Remove ${tier.name}`}
+                            >
+                              <RiDeleteBin7Line className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

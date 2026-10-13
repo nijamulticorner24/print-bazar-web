@@ -132,6 +132,7 @@ export interface DynamicFieldOption {
   imageUrl?: string | null;
   fileCount?: number | null;
   fileSlotLabels?: string[];
+  minMegapixels?: number | null;
 }
 
 export interface ReusableAttributeOption {
@@ -144,6 +145,7 @@ export interface ReusableAttributeOption {
   imageUrl?: string | null;
   fileCount?: number | null;
   fileSlotLabels?: string[];
+  minMegapixels?: number | null;
   sortOrder?: number;
   isOptionalAddOn?: boolean;
 }
@@ -255,6 +257,12 @@ export interface ShippingGstSettings {
   gstRate: number;
   freeShippingThreshold: number;
   isFreeShippingEnabled: boolean;
+  enableWeightCharges?: boolean;
+  baseWeightKg?: number;
+  weightRatePerKg?: number;
+  enableQuantityCharges?: boolean;
+  quantityStep?: number;
+  quantitySurchargePerStep?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -273,6 +281,12 @@ export interface ShippingTaxCalculationResult {
   subtotal: number;
   shippingFee: number;
   baseShippingFee: number;
+  locationCharge?: number;
+  weightCharge?: number;
+  quantityCharge?: number;
+  totalWeightKg?: number;
+  totalQuantity?: number;
+  calculationBasis?: string;
   isFreeShippingApplied: boolean;
   freeShippingThreshold: number;
   isFreeShippingEnabled: boolean;
@@ -315,8 +329,11 @@ export interface DynamicProduct {
   stockQuantity: number;
   lowStockAlert: number;
   defaultSize?: string | null;
-  // Fulfillment & Payment Surcharges (Admin-Controlled)
+  // Fulfillment & Courier Surcharges (Admin-Controlled alongside Product Configuration)
+  shippingChargeType?: 'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED';
+  unitWeightGrams?: number | string | null;
   courierCharge?: number | string | null;
+  perAdditionalQtyRate?: number | string | null;
   freeShippingThreshold?: number | string | null;
   allowCod?: boolean;
   codSurcharge?: number | string | null;
@@ -933,10 +950,43 @@ export const api = {
     postalCode?: string;
     deliveryMethod?: 'COURIER' | 'STORE_PICKUP';
     isInterState?: boolean;
+    items?: Array<{
+      productId?: string;
+      productName?: string;
+      quantity: number;
+      unitPrice?: number;
+      totalPrice?: number;
+      weightGrams?: number;
+    }>;
+    totalQuantity?: number;
+    totalWeightKg?: number;
   }) =>
     fetchApi<ShippingTaxCalculationResult>('/shipping-gst/calculate', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  listProductShippingSettings: () =>
+    fetchApi<any[]>('/shipping-gst/products'),
+  updateProductShippingSettings: (productId: string, data: any) =>
+    fetchApi<any>(`/shipping-gst/products/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  batchUpdateCategoryShippingSettings: (data: {
+    categoryId?: string;
+    productIds?: string[];
+    shippingChargeType?: string;
+    unitWeightGrams?: number;
+    courierCharge?: number;
+    perAdditionalQtyRate?: number;
+    freeShippingThreshold?: number;
+    quantityCourierSlabs?: Array<{ minQty: number; maxQty?: number; charge: number }>;
+  }) =>
+    fetchApi<{ updatedCount: number; message: string }>('/shipping-gst/products/batch', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getInvoice: (idOrNumber: string) =>
+    fetchApi<any>(`/invoices/${idOrNumber}`),
 };
 

@@ -1,55 +1,95 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Truck,
   Percent,
-  DollarSign,
   Plus,
-  Pencil,
   Trash2,
   CheckCircle2,
   AlertCircle,
   Save,
   MapPin,
   ShieldCheck,
-  Package,
+  Scale,
   Layers,
+  Calculator,
+  Package,
   Sparkles,
 } from 'lucide-react';
 import {
   RiTruckLine,
   RiPercentLine,
-  RiMoneyDollarCircleLine,
   RiAddLine,
   RiDeleteBinLine,
   RiEditLine,
-  RiShieldCheckLine,
   RiAlertLine,
-  RiCheckLine,
-  RiCloseLine,
   RiSearch2Line,
+  RiScalesLine,
+  RiStackLine,
+  RiMapPinLine,
+  RiCalculatorLine,
+  RiCheckLine,
+  RiShoppingBag3Line,
 } from 'react-icons/ri';
 import {
   api,
   ShippingGstSettings,
   ShippingZone,
+  ShippingTaxCalculationResult,
 } from '@/lib/api';
 import { formatCurrency } from '@/lib/utils';
-import { Button, Input, Modal, Badge } from '@/components/ui';
+import { Button, Modal } from '@/components/ui';
+
+type ActiveTab = 'global' | 'location' | 'products' | 'calculator';
+
+export interface QuantityCourierSlab {
+  minQty: number;
+  maxQty?: number;
+  charge: number;
+}
+
+interface ProductShippingItem {
+  id: string;
+  categoryId?: string;
+  name: string;
+  slug: string;
+  sku: string;
+  categoryName: string;
+  basePrice: number;
+  shippingChargeType: 'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED';
+  unitWeightGrams: number;
+  courierCharge: number;
+  perAdditionalQtyRate: number;
+  freeShippingThreshold: number;
+  quantityStep: number;
+  quantityCourierSlabs?: QuantityCourierSlab[];
+}
 
 export default function AdminShippingGstPage() {
+  const [activeTab, setActiveTab] = useState<ActiveTab>('global');
+
   // Loading & Global Status
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
-  // Core Settings Form State
+  // Core & Courier Global Settings Form State
   const [baseShippingFee, setBaseShippingFee] = useState<number | ''>(150);
   const [gstRate, setGstRate] = useState<number | ''>(18);
   const [freeShippingThreshold, setFreeShippingThreshold] = useState<number | ''>(2000);
   const [isFreeShippingEnabled, setIsFreeShippingEnabled] = useState(true);
+
+  // Weight-wise Settings
+  const [enableWeightCharges, setEnableWeightCharges] = useState(true);
+  const [baseWeightKg, setBaseWeightKg] = useState<number | ''>(1.0);
+  const [weightRatePerKg, setWeightRatePerKg] = useState<number | ''>(50.0);
+
+  // Quantity-wise Settings
+  const [enableQuantityCharges, setEnableQuantityCharges] = useState(true);
+  const [quantityStep, setQuantityStep] = useState<number | ''>(500);
+  const [quantitySurchargePerStep, setQuantitySurchargePerStep] = useState<number | ''>(30.0);
 
   // Regional Pincode Zones State
   const [zones, setZones] = useState<ShippingZone[]>([]);
@@ -67,14 +107,58 @@ export default function AdminShippingGstPage() {
   const [zoneToDelete, setZoneToDelete] = useState<ShippingZone | null>(null);
   const [isDeletingZone, setIsDeletingZone] = useState(false);
 
-  // Load Data
+  // Product-Level Courier Configuration State
+  const [productShippingList, setProductShippingList] = useState<ProductShippingItem[]>([]);
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+
+  // Editing Single Product Modal
+  const [editingProduct, setEditingProduct] = useState<ProductShippingItem | null>(null);
+  const [prodShippingType, setProdShippingType] = useState<'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED'>('DEFAULT');
+  const [prodUnitWeight, setProdUnitWeight] = useState<number | ''>(2.5);
+  const [prodCourierCharge, setProdCourierCharge] = useState<number | ''>(100);
+  const [prodQtyStepRate, setProdQtyStepRate] = useState<number | ''>(25);
+  const [prodFreeThreshold, setProdFreeThreshold] = useState<number | ''>(1000);
+  const [prodQuantitySlabs, setProdQuantitySlabs] = useState<QuantityCourierSlab[]>([]);
+  const [applyToEntireCategory, setApplyToEntireCategory] = useState(false);
+  const [isSavingProductSettings, setIsSavingProductSettings] = useState(false);
+  const [productModalError, setProductModalError] = useState<string | null>(null);
+
+  // Batch Category Courier Modal State
+  const [isBatchCategoryModalOpen, setIsBatchCategoryModalOpen] = useState(false);
+  const [batchTargetCategoryId, setBatchTargetCategoryId] = useState('');
+  const [batchShippingType, setBatchShippingType] = useState<'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED'>('QUANTITY_BASED');
+  const [batchUnitWeight, setBatchUnitWeight] = useState<number | ''>(2.5);
+  const [batchCourierCharge, setBatchCourierCharge] = useState<number | ''>(100);
+  const [batchQtyStepRate, setBatchQtyStepRate] = useState<number | ''>(25);
+  const [batchFreeThreshold, setBatchFreeThreshold] = useState<number | ''>(1000);
+  const [batchQuantitySlabs, setBatchQuantitySlabs] = useState<QuantityCourierSlab[]>([
+    { minQty: 100, charge: 50 },
+    { minQty: 250, charge: 80 },
+    { minQty: 500, charge: 120 },
+    { minQty: 1000, charge: 200 },
+  ]);
+  const [isSavingBatchCategory, setIsSavingBatchCategory] = useState(false);
+  const [batchModalError, setBatchModalError] = useState<string | null>(null);
+
+  // Live Calculator Simulator State
+  const [simSubtotal, setSimSubtotal] = useState<number | ''>(1500);
+  const [simPincode, setSimPincode] = useState('400001');
+  const [simQuantity, setSimQuantity] = useState<number | ''>(500);
+  const [simWeightKg, setSimWeightKg] = useState<number | ''>(1.25);
+  const [simResult, setSimResult] = useState<ShippingTaxCalculationResult | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  // Load All Data
   const loadAllData = async () => {
     setIsLoading(true);
     setSettingsError(null);
     try {
-      const [settingsRes, zonesRes] = await Promise.all([
+      const [settingsRes, zonesRes, productsRes] = await Promise.all([
         api.getShippingGstSettings(),
         api.listShippingZones(),
+        api.listProductShippingSettings().catch(() => []),
       ]);
 
       if (settingsRes) {
@@ -82,9 +166,16 @@ export default function AdminShippingGstPage() {
         setGstRate(settingsRes.gstRate);
         setFreeShippingThreshold(settingsRes.freeShippingThreshold);
         setIsFreeShippingEnabled(settingsRes.isFreeShippingEnabled);
+        setEnableWeightCharges(settingsRes.enableWeightCharges ?? true);
+        setBaseWeightKg(settingsRes.baseWeightKg ?? 1.0);
+        setWeightRatePerKg(settingsRes.weightRatePerKg ?? 50.0);
+        setEnableQuantityCharges(settingsRes.enableQuantityCharges ?? true);
+        setQuantityStep(settingsRes.quantityStep ?? 500);
+        setQuantitySurchargePerStep(settingsRes.quantitySurchargePerStep ?? 30.0);
       }
 
       setZones(zonesRes || []);
+      setProductShippingList(productsRes || []);
     } catch (err: any) {
       console.error('Failed to load Shipping & GST data:', err);
       setSettingsError(err?.message || 'Failed to load settings. Please try again.');
@@ -97,7 +188,7 @@ export default function AdminShippingGstPage() {
     loadAllData();
   }, []);
 
-  // Save Core Settings
+  // Save Global Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSettingsError(null);
@@ -106,17 +197,19 @@ export default function AdminShippingGstPage() {
     const baseFeeNum = Number(baseShippingFee);
     const gstRateNum = Number(gstRate);
     const thresholdNum = Number(freeShippingThreshold);
+    const baseWeightNum = Number(baseWeightKg);
+    const weightRateNum = Number(weightRatePerKg);
+    const qStepNum = Number(quantityStep);
+    const qSurchargeNum = Number(quantitySurchargePerStep);
 
     if (isNaN(baseFeeNum) || baseFeeNum < 0) {
       setSettingsError('Default Base Shipping Fee must be a valid non-negative number.');
       return;
     }
-
     if (isNaN(gstRateNum) || gstRateNum < 0 || gstRateNum > 100) {
       setSettingsError('GST Tax Rate must be between 0% and 100%.');
       return;
     }
-
     if (isNaN(thresholdNum) || thresholdNum < 0) {
       setSettingsError('Free Shipping Threshold must be a non-negative amount.');
       return;
@@ -129,14 +222,26 @@ export default function AdminShippingGstPage() {
         gstRate: gstRateNum,
         freeShippingThreshold: thresholdNum,
         isFreeShippingEnabled,
+        enableWeightCharges,
+        baseWeightKg: baseWeightNum,
+        weightRatePerKg: weightRateNum,
+        enableQuantityCharges,
+        quantityStep: qStepNum,
+        quantitySurchargePerStep: qSurchargeNum,
       });
 
       setBaseShippingFee(updated.baseShippingFee);
       setGstRate(updated.gstRate);
       setFreeShippingThreshold(updated.freeShippingThreshold);
       setIsFreeShippingEnabled(updated.isFreeShippingEnabled);
+      setEnableWeightCharges(updated.enableWeightCharges ?? true);
+      setBaseWeightKg(updated.baseWeightKg ?? 1.0);
+      setWeightRatePerKg(updated.weightRatePerKg ?? 50.0);
+      setEnableQuantityCharges(updated.enableQuantityCharges ?? true);
+      setQuantityStep(updated.quantityStep ?? 500);
+      setQuantitySurchargePerStep(updated.quantitySurchargePerStep ?? 30.0);
 
-      setSettingsSuccess('Shipping and GST settings successfully saved & applied to checkout pricing engine.');
+      setSettingsSuccess('Courier charges and GST settings saved successfully & applied to checkout pricing engine.');
       setTimeout(() => setSettingsSuccess(null), 4000);
     } catch (err: any) {
       setSettingsError(err?.message || 'Failed to save settings.');
@@ -167,7 +272,7 @@ export default function AdminShippingGstPage() {
     setIsZoneModalOpen(true);
   };
 
-  // Save Zone (Create or Update)
+  // Save Zone
   const handleSaveZoneModal = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalError(null);
@@ -189,7 +294,6 @@ export default function AdminShippingGstPage() {
       return;
     }
 
-    // Check client-side duplicate prefix
     const duplicate = zones.find(
       (z) => z.pincodePrefix === cleanPrefix && z.id !== editingZoneId,
     );
@@ -225,7 +329,7 @@ export default function AdminShippingGstPage() {
     }
   };
 
-  // Confirm Delete Zone
+  // Delete Zone
   const handleDeleteZone = async () => {
     if (!zoneToDelete) return;
     setIsDeletingZone(true);
@@ -240,6 +344,233 @@ export default function AdminShippingGstPage() {
     }
   };
 
+  // Distinct Categories list
+  const distinctCategories = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of productShippingList) {
+      if (p.categoryId) {
+        map.set(p.categoryId, p.categoryName || 'General');
+      }
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [productShippingList]);
+
+  // Quantity Slab manipulation helpers
+  const handleAddSlab = (target: 'single' | 'batch') => {
+    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
+    setter((prev) => {
+      const last = prev[prev.length - 1];
+      const nextMin = last ? (last.maxQty ? last.maxQty + 1 : last.minQty + 250) : 100;
+      const nextCharge = last ? Math.round(last.charge * 1.5) : 50;
+      return [...prev, { minQty: nextMin, charge: nextCharge }];
+    });
+  };
+
+  const handleRemoveSlab = (idx: number, target: 'single' | 'batch') => {
+    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
+    setter((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateSlab = (
+    idx: number,
+    field: keyof QuantityCourierSlab,
+    val: any,
+    target: 'single' | 'batch',
+  ) => {
+    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
+    setter((prev) =>
+      prev.map((s, i) => (i === idx ? { ...s, [field]: val } : s)),
+    );
+  };
+
+  const handleAddQuickPreset = (minQty: number, charge: number, target: 'single' | 'batch') => {
+    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
+    setter((prev) => {
+      if (prev.some((s) => s.minQty === minQty)) return prev;
+      return [...prev, { minQty, charge }].sort((a, b) => a.minQty - b.minQty);
+    });
+  };
+
+  // Open Product Courier Edit Modal
+  const handleOpenEditProductShipping = (p: ProductShippingItem) => {
+    setEditingProduct(p);
+    setProdShippingType(p.shippingChargeType || 'DEFAULT');
+    setProdUnitWeight(p.unitWeightGrams || 2.5);
+    setProdCourierCharge(p.courierCharge || 100);
+    setProdQtyStepRate(p.perAdditionalQtyRate || 25);
+    setProdFreeThreshold(p.freeShippingThreshold || 1000);
+    setProdQuantitySlabs(
+      p.quantityCourierSlabs && p.quantityCourierSlabs.length > 0
+        ? p.quantityCourierSlabs.map((s) => ({ ...s }))
+        : [
+            { minQty: 100, charge: 50 },
+            { minQty: 250, charge: 80 },
+            { minQty: 500, charge: 120 },
+          ],
+    );
+    setApplyToEntireCategory(false);
+    setProductModalError(null);
+  };
+
+  // Save Single Product Courier Settings (with optional Category Apply)
+  const handleSaveProductShipping = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    setProductModalError(null);
+    setIsSavingProductSettings(true);
+
+    try {
+      const payload = {
+        shippingChargeType: prodShippingType,
+        unitWeightGrams: Number(prodUnitWeight) || 0,
+        courierCharge: Number(prodCourierCharge) || 0,
+        perAdditionalQtyRate: Number(prodQtyStepRate) || 0,
+        freeShippingThreshold: Number(prodFreeThreshold) || 0,
+        quantityCourierSlabs: prodQuantitySlabs,
+      };
+
+      if (applyToEntireCategory && editingProduct.categoryId) {
+        const res = await api.batchUpdateCategoryShippingSettings({
+          categoryId: editingProduct.categoryId,
+          ...payload,
+        });
+
+        setProductShippingList((prev) =>
+          prev.map((item) =>
+            item.categoryId === editingProduct.categoryId
+              ? {
+                  ...item,
+                  ...payload,
+                }
+              : item,
+          ),
+        );
+
+        setEditingProduct(null);
+        setSettingsSuccess(
+          `Courier settings & quantity slabs applied to all products in category '${editingProduct.categoryName}'. (${res.updatedCount} products synchronized)`,
+        );
+      } else {
+        await api.updateProductShippingSettings(editingProduct.id, payload);
+
+        setProductShippingList((prev) =>
+          prev.map((item) =>
+            item.id === editingProduct.id
+              ? {
+                  ...item,
+                  ...payload,
+                }
+              : item,
+          ),
+        );
+
+        setEditingProduct(null);
+        setSettingsSuccess(`Courier settings for '${editingProduct.name}' updated successfully.`);
+      }
+      setTimeout(() => setSettingsSuccess(null), 4000);
+    } catch (err: any) {
+      setProductModalError(err?.message || 'Failed to save product shipping settings.');
+    } finally {
+      setIsSavingProductSettings(false);
+    }
+  };
+
+  // Batch Category Courier Settings Save
+  const handleSaveBatchCategoryShipping = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBatchModalError(null);
+
+    const targetCategory = distinctCategories.find((c) => c.id === batchTargetCategoryId);
+    if (!batchTargetCategoryId && selectedProductIds.length === 0) {
+      setBatchModalError('Please select a target category or at least one product.');
+      return;
+    }
+
+    setIsSavingBatchCategory(true);
+    try {
+      const isProductSelectionMode = selectedProductIds.length > 0 && !batchTargetCategoryId;
+      const payload = {
+        ...(isProductSelectionMode
+          ? { productIds: selectedProductIds }
+          : { categoryId: batchTargetCategoryId }),
+        shippingChargeType: batchShippingType,
+        unitWeightGrams: Number(batchUnitWeight) || 0,
+        courierCharge: Number(batchCourierCharge) || 0,
+        perAdditionalQtyRate: Number(batchQtyStepRate) || 0,
+        freeShippingThreshold: Number(batchFreeThreshold) || 0,
+        quantityCourierSlabs: batchQuantitySlabs,
+      };
+
+      const res = await api.batchUpdateCategoryShippingSettings(payload);
+
+      setProductShippingList((prev) =>
+        prev.map((item) => {
+          const isTarget = isProductSelectionMode
+            ? selectedProductIds.includes(item.id)
+            : item.categoryId === batchTargetCategoryId;
+          if (isTarget) {
+            return {
+              ...item,
+              shippingChargeType: batchShippingType,
+              unitWeightGrams: Number(batchUnitWeight) || 0,
+              courierCharge: Number(batchCourierCharge) || 0,
+              perAdditionalQtyRate: Number(batchQtyStepRate) || 0,
+              freeShippingThreshold: Number(batchFreeThreshold) || 0,
+              quantityCourierSlabs: batchQuantitySlabs,
+            };
+          }
+          return item;
+        }),
+      );
+
+      setIsBatchCategoryModalOpen(false);
+      setSelectedProductIds([]);
+      setSettingsSuccess(
+        `Batch courier settings applied successfully to ${res.updatedCount} product(s)${
+          targetCategory ? ` in '${targetCategory.name}'` : ''
+        }.`,
+      );
+      setTimeout(() => setSettingsSuccess(null), 4000);
+    } catch (err: any) {
+      setBatchModalError(err?.message || 'Failed to batch update category courier settings.');
+    } finally {
+      setIsSavingBatchCategory(false);
+    }
+  };
+
+  // Multi-select helpers
+  const handleToggleSelectProduct = (id: string) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id],
+    );
+  };
+
+  // Run Live Calculator Simulation
+  const handleRunSimulation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSimulating(true);
+    try {
+      const res = await api.calculateShippingAndTax({
+        subtotal: Number(simSubtotal) || 0,
+        postalCode: simPincode,
+        deliveryMethod: 'COURIER',
+        totalQuantity: Number(simQuantity) || 500,
+        totalWeightKg: Number(simWeightKg) || 1.25,
+      });
+      setSimResult(res);
+    } catch (err: any) {
+      console.error('Simulation error:', err);
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'calculator' && !simResult) {
+      handleRunSimulation();
+    }
+  }, [activeTab]);
+
   // Filtered Zones List
   const filteredZones = zones.filter((z) => {
     if (!zoneSearchQuery.trim()) return true;
@@ -250,21 +581,37 @@ export default function AdminShippingGstPage() {
     );
   });
 
+  // Filtered Products List
+  const filteredProducts = productShippingList.filter((p) => {
+    if (categoryFilter !== 'ALL') {
+      if (p.categoryId && p.categoryId !== categoryFilter && p.categoryName !== categoryFilter) {
+        return false;
+      }
+    }
+    if (!productSearchQuery.trim()) return true;
+    const q = productSearchQuery.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      p.sku.toLowerCase().includes(q) ||
+      p.categoryName.toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* 1. Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 text-[12px] font-mono font-semibold text-slate-500 uppercase tracking-wider">
             <span>COMMERCIAL ADMINISTRATION</span>
             <span>•</span>
-            <span className="text-slate-900 font-bold">SHIPPING & GST CONFIGURATION</span>
+            <span className="text-slate-900 font-bold">COURIER CHARGES & GST ENGINE</span>
           </div>
           <h1 className="text-[24px] sm:text-[28px] font-semibold text-slate-900 tracking-tight leading-[1.2] mt-1">
-            Shipping & GST Settings
+            Courier & Delivery Charges Configuration
           </h1>
           <p className="text-[13px] sm:text-[14px] text-slate-500 leading-normal mt-0.5">
-            Configure default courier charges, GST tax rate, automatic free shipping thresholds, and regional pincode zone rates.
+            Configure quantity-wise, weight-wise, and location-based courier charges alongside product-level settings.
           </p>
         </div>
 
@@ -279,7 +626,7 @@ export default function AdminShippingGstPage() {
             className="shadow-sm font-semibold text-[13px]"
           >
             <Save className="h-4 w-4 mr-1.5" />
-            <span>SAVE CHANGES</span>
+            <span>SAVE ALL RULES</span>
           </Button>
         </div>
       </div>
@@ -299,402 +646,943 @@ export default function AdminShippingGstPage() {
         </div>
       )}
 
-      {/* 2. Main Grid: Section A & Metric Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Core Rates & Tax Parameters Form (Section A) */}
-        <div className="lg:col-span-6 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-slate-100 text-slate-800 flex items-center justify-center font-bold text-xs border border-slate-200">
-                <Truck className="h-4 w-4 text-slate-700" />
+      {/* 2. Top Navigation Tabs */}
+      <div className="flex border-b border-slate-200 gap-1 sm:gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('global')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all ${
+            activeTab === 'global'
+              ? 'border-slate-900 text-slate-900 font-bold bg-white'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <Truck className="h-4 w-4" />
+          <span>Global Courier & GST</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('location')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all ${
+            activeTab === 'location'
+              ? 'border-slate-900 text-slate-900 font-bold bg-white'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <MapPin className="h-4 w-4" />
+          <span>Location-Based Zones</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-slate-100 text-[10px] font-mono text-slate-600">
+            {zones.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('products')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all ${
+            activeTab === 'products'
+              ? 'border-slate-900 text-slate-900 font-bold bg-white'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <Package className="h-4 w-4" />
+          <span>Product Configuration Rules</span>
+          <span className="px-1.5 py-0.2 rounded-full bg-slate-100 text-[10px] font-mono text-slate-600">
+            {productShippingList.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('calculator')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all ${
+            activeTab === 'calculator'
+              ? 'border-slate-900 text-slate-900 font-bold bg-white'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <Calculator className="h-4 w-4" />
+          <span>Live Calculator Simulator</span>
+        </button>
+      </div>
+
+      {/* ============================================================ */}
+      {/* TAB 1: GLOBAL COURIER & GST RULES */}
+      {/* ============================================================ */}
+      {activeTab === 'global' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Core Baseline Parameters */}
+            <div className="lg:col-span-6 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-slate-100 text-slate-800 flex items-center justify-center font-bold text-xs border border-slate-200">
+                    <Truck className="h-4 w-4 text-slate-700" />
+                  </div>
+                  <div>
+                    <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
+                      Standard Courier & Tax Parameters
+                    </h2>
+                    <p className="text-[12px] text-slate-500">
+                      Baseline delivery fee and Goods & Services Tax (GST) rate.
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                  CORE POLICY
+                </span>
               </div>
-              <div>
-                <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
-                  Core Rates & Tax Parameters
-                </h2>
-                <p className="text-[12px] text-slate-500">
-                  Global baseline rates used across storefront checkout and quotes.
-                </p>
+
+              <div className="space-y-4">
+                {/* Base Shipping Fee */}
+                <div>
+                  <label className="text-[13px] font-semibold text-slate-800 block mb-1">
+                    Default Base Delivery Charge (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      value={baseShippingFee}
+                      onChange={(e) => setBaseShippingFee(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      placeholder="e.g. 150"
+                      className="w-full h-10 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Standard fallback courier charge applied for non-zoned locations and orders within base weight.
+                  </p>
+                </div>
+
+                {/* GST Tax Rate */}
+                <div>
+                  <label className="text-[13px] font-semibold text-slate-800 block mb-1">
+                    GST Tax Rate (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      required
+                      value={gstRate}
+                      onChange={(e) => setGstRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      placeholder="e.g. 18"
+                      className="w-full h-10 px-3 pr-8 bg-white border border-slate-200 rounded-lg text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
+                      %
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Standard GST rate (e.g. 18% = 9% CGST + 9% SGST intra-state, 18% IGST inter-state).
+                  </p>
+                </div>
+
+                {/* Free Shipping Threshold */}
+                <div>
+                  <label className="text-[13px] font-semibold text-slate-800 block mb-1">
+                    Free Delivery Threshold (₹)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      value={freeShippingThreshold}
+                      onChange={(e) => setFreeShippingThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      placeholder="e.g. 2000"
+                      className="w-full h-10 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Cart value required to unlock 100% free delivery across standard shipments.
+                  </p>
+                </div>
+
+                {/* Toggle Free Shipping */}
+                <div className="pt-2 border-t border-slate-100">
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={isFreeShippingEnabled}
+                      onChange={(e) => setIsFreeShippingEnabled(e.target.checked)}
+                      className="h-4 w-4 mt-0.5 text-slate-900 rounded border-slate-300 focus:ring-slate-900"
+                    />
+                    <div>
+                      <span className="text-[13px] font-bold text-slate-900 block">
+                        Enable Automatic Free Shipping Threshold
+                      </span>
+                      <span className="text-[12px] text-slate-500 block mt-0.5">
+                        When enabled, courier charges automatically zero out at checkout when order reaches {formatCurrency(Number(freeShippingThreshold || 0))}.
+                      </span>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
-            <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-              SECTION A
-            </span>
+
+            {/* Weight-Wise and Quantity-Wise Configuration */}
+            <div className="lg:col-span-6 space-y-6">
+              {/* Weight-Wise Card */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs border border-indigo-200">
+                      <Scale className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
+                        Weight-Wise Courier Surcharges
+                      </h2>
+                      <p className="text-[12px] text-slate-500">
+                        Adjust charges for heavier shipments based on total carton weight.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={enableWeightCharges}
+                      onChange={(e) => setEnableWeightCharges(e.target.checked)}
+                      className="h-4 w-4 text-slate-900 rounded border-slate-300"
+                    />
+                    <span className="text-xs font-bold text-slate-700">Active</span>
+                  </label>
+                </div>
+
+                <div className={`grid grid-cols-2 gap-4 ${!enableWeightCharges ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div>
+                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
+                      Base Included Weight (Kg)
+                    </label>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={baseWeightKg}
+                      onChange={(e) => setBaseWeightKg(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                      placeholder="e.g. 1.0"
+                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                    />
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">Weight covered in base rate</span>
+                  </div>
+
+                  <div>
+                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
+                      Extra Rate Per Additional Kg (₹)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs font-semibold">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={weightRatePerKg}
+                        onChange={(e) => setWeightRatePerKg(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        placeholder="e.g. 50"
+                        className="w-full h-9 pl-6 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">Surcharge per incremental kg</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quantity-Wise Card */}
+              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold text-xs border border-amber-200">
+                      <Layers className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
+                        Quantity-Wise Delivery Surcharges
+                      </h2>
+                      <p className="text-[12px] text-slate-500">
+                        Scale courier charges when commercial print volume exceeds standard pack count.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={enableQuantityCharges}
+                      onChange={(e) => setEnableQuantityCharges(e.target.checked)}
+                      className="h-4 w-4 text-slate-900 rounded border-slate-300"
+                    />
+                    <span className="text-xs font-bold text-slate-700">Active</span>
+                  </label>
+                </div>
+
+                <div className={`grid grid-cols-2 gap-4 ${!enableQuantityCharges ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div>
+                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
+                      Quantity Surcharge Step (Units)
+                    </label>
+                    <input
+                      type="number"
+                      min="10"
+                      step="10"
+                      value={quantityStep}
+                      onChange={(e) => setQuantityStep(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                      placeholder="e.g. 500"
+                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                    />
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">Standard volume unit step</span>
+                  </div>
+
+                  <div>
+                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
+                      Surcharge Per Additional Step (₹)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs font-semibold">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={quantitySurchargePerStep}
+                        onChange={(e) => setQuantitySurchargePerStep(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        placeholder="e.g. 30"
+                        className="w-full h-9 pl-6 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                      />
+                    </div>
+                    <span className="text-[11px] text-slate-400 mt-0.5 block">Extra charge per {quantityStep || 500} pcs</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 2: LOCATION-BASED PINCODE ZONES */}
+      {/* ============================================================ */}
+      {activeTab === 'location' && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Regional Pincode Zone Rates</span>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
+                    {zones.length} {zones.length === 1 ? 'Zone' : 'Zones'}
+                  </span>
+                </h2>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Location-based courier fees for delivery pincodes and regional hubs. Longest matching prefix takes precedence.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Search filter */}
+              <div className="relative w-60">
+                <RiSearch2Line className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={zoneSearchQuery}
+                  onChange={(e) => setZoneSearchQuery(e.target.value)}
+                  placeholder="Search zone or prefix..."
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white"
+                />
+              </div>
+
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleOpenAddZone}
+                className="gap-1.5 font-bold text-xs"
+              >
+                <RiAddLine className="h-4 w-4" />
+                <span>Add Shipping Zone</span>
+              </Button>
+            </div>
           </div>
 
-          <form onSubmit={handleSaveSettings} className="space-y-4">
-            {/* Base Shipping Fee */}
+          {/* Zones Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs min-w-[650px]">
+              <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-mono font-semibold">
+                <tr>
+                  <th className="py-3 px-4">Zone / Region Name</th>
+                  <th className="py-3 px-4">Pincode Prefix / Code</th>
+                  <th className="py-3 px-4">Location Shipping Charge</th>
+                  <th className="py-3 px-4">Matching Rule</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400 font-mono text-xs">
+                      Loading shipping zones catalog...
+                    </td>
+                  </tr>
+                ) : filteredZones.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-14 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                          <MapPin className="h-5 w-5" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-800">
+                          No regional shipping zones found
+                        </span>
+                        <p className="text-xs text-slate-500 max-w-sm">
+                          Deliveries fallback to the default base courier charge ({formatCurrency(Number(baseShippingFee || 0))}).
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleOpenAddZone}
+                          className="mt-2"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" />
+                          <span>Add First Zone</span>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredZones.map((zone) => {
+                    const isExact = zone.pincodePrefix.length === 6;
+
+                    return (
+                      <tr key={zone.id} className="hover:bg-slate-50/40 transition-colors">
+                        <td className="py-3 px-4 font-semibold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <span>{zone.zoneName}</span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-100 border border-slate-200">
+                            {zone.pincodePrefix}
+                            {!isExact && <span className="text-slate-400 font-normal">***</span>}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                          {zone.shippingCharge === 0 ? (
+                            <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                              FREE (₹0)
+                            </span>
+                          ) : (
+                            <span>{formatCurrency(zone.shippingCharge)}</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
+                          {isExact ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
+                              Exact 6-Digit Match
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
+                              {zone.pincodePrefix.length}-Digit Prefix Match
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {zone.isActive ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                              Disabled
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditZone(zone)}
+                              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                              title="Edit shipping zone"
+                            >
+                              <RiEditLine className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setZoneToDelete(zone)}
+                              className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete shipping zone"
+                            >
+                              <RiDeleteBinLine className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 3: PRODUCT CONFIGURATION COURIER RULES */}
+      {/* ============================================================ */}
+      {activeTab === 'products' && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <label className="text-[13px] font-semibold text-slate-800 block mb-1">
-                Default Base Shipping Fee (₹)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
-                  ₹
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                <span>Product-Level Courier Configurations</span>
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">
+                  Alongside Catalogue Items
                 </span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Set item-specific courier charge rules (Fixed, Free, Weight-Based, Quantity-Based) and unit weights across your catalogue.
+              </p>
+            </div>
+
+            {/* Filter and Action Controls */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Category Filter */}
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="h-9 px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-slate-900 font-medium"
+              >
+                <option value="ALL">All Categories ({distinctCategories.length})</option>
+                {distinctCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Search Bar */}
+              <div className="relative w-48 sm:w-56">
+                <RiSearch2Line className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  placeholder="Search products..."
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white"
+                />
+              </div>
+
+              {/* Batch Category Courier Button */}
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setBatchTargetCategoryId(
+                    categoryFilter !== 'ALL'
+                      ? categoryFilter
+                      : (distinctCategories[0]?.id || ''),
+                  );
+                  setIsBatchCategoryModalOpen(true);
+                }}
+                className="h-9 px-3 gap-1.5 font-bold shadow-xs text-xs"
+              >
+                <RiStackLine className="h-4 w-4" />
+                <span>Batch Category Courier</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Bulk Selection Ribbon */}
+          {selectedProductIds.length > 0 && (
+            <div className="flex items-center justify-between p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-950 font-medium animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-purple-600 animate-pulse" />
+                <span>
+                  <strong>{selectedProductIds.length}</strong> product{selectedProductIds.length === 1 ? '' : 's'} selected for bulk configuration.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedProductIds([])}
+                  className="px-2.5 py-1 text-[11px] text-purple-700 hover:text-purple-900 font-semibold"
+                >
+                  Clear Selection
+                </button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setBatchTargetCategoryId('');
+                    setIsBatchCategoryModalOpen(true);
+                  }}
+                  className="h-7 text-xs font-bold gap-1 bg-purple-700 hover:bg-purple-800 text-white"
+                >
+                  <RiEditLine className="h-3.5 w-3.5" />
+                  <span>Configure Selected Products</span>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-left text-xs min-w-[750px]">
+              <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-mono font-semibold">
+                <tr>
+                  <th className="py-3 px-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredProducts.length > 0 &&
+                        selectedProductIds.length === filteredProducts.length
+                      }
+                      onChange={() => {
+                        if (selectedProductIds.length === filteredProducts.length) {
+                          setSelectedProductIds([]);
+                        } else {
+                          setSelectedProductIds(filteredProducts.map((p) => p.id));
+                        }
+                      }}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                    />
+                  </th>
+                  <th className="py-3 px-4">Product Name & SKU</th>
+                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Courier Mode</th>
+                  <th className="py-3 px-4">Unit Weight</th>
+                  <th className="py-3 px-4">Custom Fee / Quantity Slabs</th>
+                  <th className="py-3 px-4 text-right">Configure</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {productShippingList.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-slate-400 font-mono text-xs">
+                      Loading catalogue products...
+                    </td>
+                  </tr>
+                ) : filteredProducts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-slate-500 text-xs">
+                      No products match your search/category filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProducts.map((p) => {
+                    const isSelected = selectedProductIds.includes(p.id);
+                    const slabs = p.quantityCourierSlabs || [];
+
+                    return (
+                      <tr
+                        key={p.id}
+                        className={`hover:bg-slate-50/40 transition-colors ${
+                          isSelected ? 'bg-purple-50/30' : ''
+                        }`}
+                      >
+                        <td className="py-3 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectProduct(p.id)}
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                          />
+                        </td>
+
+                        <td className="py-3 px-4 font-semibold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-slate-400 shrink-0" />
+                            <div>
+                              <span className="block font-bold">{p.name}</span>
+                              <span className="block font-mono text-[10px] text-slate-400">
+                                {p.sku}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4 text-slate-600 font-medium">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
+                            {p.categoryName}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                              p.shippingChargeType === 'FREE'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : p.shippingChargeType === 'FIXED'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : p.shippingChargeType === 'WEIGHT_BASED'
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                : p.shippingChargeType === 'QUANTITY_BASED'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {p.shippingChargeType || 'DEFAULT'}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4 font-mono font-medium text-slate-800">
+                          {p.unitWeightGrams ? `${p.unitWeightGrams} g/pc` : '2.5 g (default)'}
+                        </td>
+
+                        <td className="py-3 px-4 font-mono text-slate-900">
+                          {p.shippingChargeType === 'FREE' ? (
+                            <span className="text-emerald-700 font-bold">₹0 (Free)</span>
+                          ) : p.shippingChargeType === 'FIXED' ? (
+                            <span className="font-bold">{formatCurrency(p.courierCharge || 100)}</span>
+                          ) : p.shippingChargeType === 'QUANTITY_BASED' ? (
+                            slabs.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 items-center">
+                                {slabs.slice(0, 3).map((slab, i) => (
+                                  <span
+                                    key={i}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-50 text-purple-800 border border-purple-200"
+                                  >
+                                    {slab.minQty} qty: ₹{slab.charge}
+                                  </span>
+                                ))}
+                                {slabs.length > 3 && (
+                                  <span className="text-[10px] text-purple-600 font-mono font-semibold">
+                                    +{slabs.length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="font-bold text-purple-900">
+                                +₹{p.perAdditionalQtyRate || 25} / step
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-slate-400 font-normal">Inherits Global Policy</span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenEditProductShipping(p)}
+                            className="text-xs gap-1 font-semibold"
+                          >
+                            <RiEditLine className="h-3.5 w-3.5" />
+                            <span>Settings</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 4: LIVE CALCULATOR SIMULATOR */}
+      {/* ============================================================ */}
+      {activeTab === 'calculator' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Inputs Column */}
+          <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-3">
+              <h2 className="text-[15px] font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-indigo-600" />
+                <span>Live Courier & Tax Simulation</span>
+              </h2>
+              <p className="text-[12px] text-slate-500 mt-0.5">
+                Simulate any cart subtotal, delivery pincode, total quantity, and package weight to test rules.
+              </p>
+            </div>
+
+            <form onSubmit={handleRunSimulation} className="space-y-3.5 text-xs">
+              <div>
+                <label className="font-semibold text-slate-800 block mb-1">
+                  Cart Merchandise Subtotal (₹)
+                </label>
                 <input
                   type="number"
                   min="0"
                   step="any"
-                  required
-                  value={baseShippingFee}
-                  onChange={(e) => setBaseShippingFee(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  placeholder="e.g. 150"
-                  className="w-full h-10 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                  value={simSubtotal}
+                  onChange={(e) => setSimSubtotal(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 1500"
+                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
                 />
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Standard courier fee applied when customer delivery pincode does not match any regional zone.
-              </p>
-            </div>
 
-            {/* GST Tax Rate */}
-            <div>
-              <label className="text-[13px] font-semibold text-slate-800 block mb-1">
-                GST Tax Rate (%)
-              </label>
-              <div className="relative">
+              <div>
+                <label className="font-semibold text-slate-800 block mb-1">
+                  Delivery Postal Code / PIN
+                </label>
                 <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  required
-                  value={gstRate}
-                  onChange={(e) => setGstRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  placeholder="e.g. 18"
-                  className="w-full h-10 px-3 pr-8 bg-white border border-slate-200 rounded-lg text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
-                  %
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Standard Goods & Services Tax percentage (e.g. 18% = 9% CGST + 9% SGST intra-state, 18% IGST inter-state).
-              </p>
-            </div>
-
-            {/* Free Shipping Threshold */}
-            <div>
-              <label className="text-[13px] font-semibold text-slate-800 block mb-1">
-                Free Shipping Threshold (₹)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-sm font-semibold">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  required
-                  value={freeShippingThreshold}
-                  onChange={(e) => setFreeShippingThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  placeholder="e.g. 2000"
-                  className="w-full h-10 pl-8 pr-3 bg-white border border-slate-200 rounded-lg text-sm font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+                  type="text"
+                  maxLength={6}
+                  value={simPincode}
+                  onChange={(e) => setSimPincode(e.target.value.replace(/[^0-9]/g, ''))}
+                  placeholder="e.g. 400001 or 560001"
+                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
                 />
               </div>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Orders with eligible merchandise subtotal reaching or exceeding this amount qualify for ₹0 shipping fee.
-              </p>
-            </div>
 
-            {/* Enable Automatic Free Shipping Checkbox */}
-            <div className="pt-2 border-t border-slate-100">
-              <label className="flex items-start gap-3 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={isFreeShippingEnabled}
-                  onChange={(e) => setIsFreeShippingEnabled(e.target.checked)}
-                  className="h-4 w-4 mt-0.5 text-slate-900 rounded border-slate-300 focus:ring-slate-900"
-                />
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <span className="text-[13px] font-bold text-slate-900 block">
-                    Enable Automatic Free Shipping Threshold
-                  </span>
-                  <span className="text-[12px] text-slate-500 block mt-0.5">
-                    When checked, checkout automatically zeroes out shipping charges when order subtotal reaches {formatCurrency(Number(freeShippingThreshold || 0))}.
-                  </span>
+                  <label className="font-semibold text-slate-800 block mb-1">
+                    Order Quantity (Pcs)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={simQuantity}
+                    onChange={(e) => setSimQuantity(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                    placeholder="e.g. 500"
+                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                  />
                 </div>
-              </label>
-            </div>
 
-            <div className="pt-3">
+                <div>
+                  <label className="font-semibold text-slate-800 block mb-1">
+                    Gross Weight (Kg)
+                  </label>
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.05"
+                    value={simWeightKg}
+                    onChange={(e) => setSimWeightKg(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    placeholder="e.g. 1.25"
+                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+                  />
+                </div>
+              </div>
+
               <Button
                 type="submit"
                 variant="primary"
-                size="md"
-                disabled={isSavingSettings || isLoading}
-                isLoading={isSavingSettings}
-                className="w-full justify-center font-bold text-xs uppercase tracking-wider"
+                size="sm"
+                disabled={isSimulating}
+                isLoading={isSimulating}
+                className="w-full mt-2 font-bold"
               >
-                <span>Save Core Parameters</span>
+                <span>Calculate Authoritative Quote</span>
               </Button>
-            </div>
-          </form>
-        </div>
-
-        {/* Right Column: Live Calculation Simulation & Summary */}
-        <div className="lg:col-span-6 space-y-4">
-          {/* Summary Telemetry Card */}
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span>Checkout Engine Policy Summary</span>
-            </h3>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-slate-500 block text-[11px]">Default Courier Base</span>
-                <span className="font-mono font-bold text-base text-slate-900 block mt-0.5">
-                  {formatCurrency(Number(baseShippingFee || 0))}
-                </span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Fallback charge</span>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-slate-500 block text-[11px]">GST Rate</span>
-                <span className="font-mono font-bold text-base text-slate-900 block mt-0.5">
-                  {Number(gstRate || 0)}%
-                </span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Tax on subtotal</span>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-slate-500 block text-[11px]">Free Shipping Threshold</span>
-                <span className="font-mono font-bold text-base text-slate-900 block mt-0.5">
-                  {formatCurrency(Number(freeShippingThreshold || 0))}
-                </span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">
-                  {isFreeShippingEnabled ? 'Status: Active' : 'Status: Disabled'}
-                </span>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-slate-500 block text-[11px]">Pincode Zone Rules</span>
-                <span className="font-mono font-bold text-base text-indigo-700 block mt-0.5">
-                  {zones.length} Configured
-                </span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Prefix matching active</span>
-              </div>
-            </div>
-
-            {/* Quick Preview Calculation Box */}
-            <div className="p-3.5 bg-amber-50/60 rounded-xl border border-amber-200/80 space-y-2 text-xs">
-              <div className="flex items-center justify-between font-bold text-amber-950">
-                <span>Illustrative Quote Example:</span>
-                <span className="font-mono">Subtotal: ₹1,500</span>
-              </div>
-              <div className="space-y-1 text-[11px] text-slate-600 border-t border-amber-200/50 pt-2 font-mono">
-                <div className="flex justify-between">
-                  <span>Shipping (Base fallback):</span>
-                  <span>{formatCurrency(Number(baseShippingFee || 0))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>GST ({Number(gstRate || 0)}%):</span>
-                  <span>{formatCurrency(Math.round(1500 * (Number(gstRate || 0) / 100) * 100) / 100)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-slate-900 pt-1 border-t border-amber-200/40">
-                  <span>Total Payable:</span>
-                  <span>
-                    {formatCurrency(
-                      Math.round(
-                        (1500 +
-                          1500 * (Number(gstRate || 0) / 100) +
-                          (isFreeShippingEnabled && 1500 >= Number(freeShippingThreshold || 0)
-                            ? 0
-                            : Number(baseShippingFee || 0))) *
-                          100,
-                      ) / 100,
-                    )}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/* 3. SECTION B: REGIONAL PINCODE ZONE RATES */}
-      {/* ============================================================ */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                <span>Regional Pincode Zone Rates</span>
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold">
-                  {zones.length} {zones.length === 1 ? 'Zone' : 'Zones'}
-                </span>
-              </h2>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Configure specialized courier fees for specific pincodes or delivery prefixes. Longest prefix takes precedence.
-            </p>
+            </form>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Search filter */}
-            <div className="relative w-60">
-              <RiSearch2Line className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={zoneSearchQuery}
-                onChange={(e) => setZoneSearchQuery(e.target.value)}
-                placeholder="Search zone or prefix..."
-                className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white"
-              />
-            </div>
-
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={handleOpenAddZone}
-              className="gap-1.5 font-bold"
-            >
-              <RiAddLine className="h-4 w-4" />
-              <span>Add Shipping Zone</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Zones Table */}
-        <div className="overflow-x-auto border border-slate-200 rounded-xl">
-          <table className="w-full text-left text-xs min-w-[650px]">
-            <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-mono font-semibold">
-              <tr>
-                <th className="py-3 px-4">Zone / Region Name</th>
-                <th className="py-3 px-4">Pincode Prefix / Code</th>
-                <th className="py-3 px-4">Shipping Charge</th>
-                <th className="py-3 px-4">Rule Precedence</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-mono text-xs">
-                    Loading shipping zones catalog...
-                  </td>
-                </tr>
-              ) : filteredZones.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-14 text-center">
-                    <div className="flex flex-col items-center justify-center space-y-2">
-                      <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                        <MapPin className="h-5 w-5" />
-                      </div>
-                      <span className="text-sm font-semibold text-slate-800">
-                        No regional shipping zones configured
-                      </span>
-                      <p className="text-xs text-slate-500 max-w-sm">
-                        All delivery pincodes will automatically receive the configured default base shipping fee ({formatCurrency(Number(baseShippingFee || 0))}).
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleOpenAddZone}
-                        className="mt-2"
-                      >
-                        <Plus className="h-3.5 w-3.5 mr-1" />
-                        <span>Add First Shipping Zone</span>
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredZones.map((zone) => {
-                  const isExact = zone.pincodePrefix.length === 6;
-
-                  return (
-                    <tr key={zone.id} className="hover:bg-slate-50/40 transition-colors">
-                      {/* Zone Name */}
-                      <td className="py-3 px-4 font-semibold text-slate-900">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                          <span>{zone.zoneName}</span>
-                        </div>
-                      </td>
-
-                      {/* Pincode Prefix */}
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-slate-100 border border-slate-200">
-                          {zone.pincodePrefix}
-                          {!isExact && <span className="text-slate-400 font-normal">***</span>}
-                        </span>
-                      </td>
-
-                      {/* Shipping Charge */}
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">
-                        {zone.shippingCharge === 0 ? (
-                          <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                            FREE (₹0)
-                          </span>
-                        ) : (
-                          <span>{formatCurrency(zone.shippingCharge)}</span>
-                        )}
-                      </td>
-
-                      {/* Rule Precedence */}
-                      <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
-                        {isExact ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
-                            Exact 6-Digit Match
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-50 text-slate-600 border border-slate-200">
-                            {zone.pincodePrefix.length}-Digit Prefix Match
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3 px-4">
-                        {zone.isActive ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
-                            Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                            Disabled
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditZone(zone)}
-                            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="Edit shipping zone"
-                          >
-                            <RiEditLine className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setZoneToDelete(zone)}
-                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete shipping zone"
-                          >
-                            <RiDeleteBinLine className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
+          {/* Results Column */}
+          <div className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+            <h2 className="text-[15px] font-bold text-slate-900 tracking-tight flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                <span>Simulation Breakdown Results</span>
+              </span>
+              {simResult?.isFreeShippingApplied && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  ✓ Free Delivery Qualified
+                </span>
               )}
-            </tbody>
-          </table>
+            </h2>
+
+            {simResult ? (
+              <div className="space-y-4 text-xs">
+                {/* Metric Strip */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-slate-500 block text-[11px]">Location Base Charge</span>
+                    <span className="font-mono font-bold text-base text-slate-900 block mt-0.5">
+                      {formatCurrency(simResult.locationCharge ?? simResult.baseShippingFee)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {simResult.matchedZone ? simResult.matchedZone.zoneName : 'Default Fallback'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-slate-500 block text-[11px]">Weight Surcharge</span>
+                    <span className="font-mono font-bold text-base text-indigo-700 block mt-0.5">
+                      {formatCurrency(simResult.weightCharge ?? 0)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {simResult.totalWeightKg} kg total
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <span className="text-slate-500 block text-[11px]">Quantity Surcharge</span>
+                    <span className="font-mono font-bold text-base text-amber-700 block mt-0.5">
+                      {formatCurrency(simResult.quantityCharge ?? 0)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {simResult.totalQuantity} units
+                    </span>
+                  </div>
+                </div>
+
+                {/* Calculation Explainer */}
+                <div className="p-3 bg-indigo-50/60 rounded-lg border border-indigo-100 text-indigo-950 font-mono text-[11px]">
+                  <strong>Calculation Formula:</strong> {simResult.calculationBasis || 'Location Base + Surcharges'}
+                </div>
+
+                {/* Breakdown Summary */}
+                <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 space-y-2 font-mono">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Taxable Merchandise Subtotal:</span>
+                    <span className="font-bold text-slate-900">{formatCurrency(simResult.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Courier & Delivery Charge (Pre-tax):</span>
+                    <span className={`font-bold ${simResult.shippingFee === 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
+                      {simResult.shippingFee === 0 ? 'FREE (₹0.00)' : formatCurrency(simResult.shippingFee)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>GST ({simResult.gstRatePercent}%):</span>
+                    <span className="font-bold text-slate-900">{formatCurrency(simResult.gstAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-base font-black text-slate-950 pt-2 border-t border-slate-200">
+                    <span>Grand Total Payable:</span>
+                    <span>{formatCurrency(simResult.grandTotal)}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-12 text-center text-slate-400 font-mono text-xs">
+                Click &ldquo;Calculate Authoritative Quote&rdquo; to simulate pricing.
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ============================================================ */}
       {/* ADD / EDIT ZONE MODAL */}
@@ -747,7 +1635,7 @@ export default function AdminShippingGstPage() {
 
           <div>
             <label className="text-xs font-semibold text-slate-800 block mb-1">
-              Shipping Charge (₹) <span className="text-red-500">*</span>
+              Location Courier Charge (₹) <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs font-semibold">
@@ -765,7 +1653,7 @@ export default function AdminShippingGstPage() {
               />
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Enter 0 for free shipping in this specific regional zone.
+              Enter 0 for free delivery in this specific regional zone.
             </p>
           </div>
 
@@ -798,6 +1686,548 @@ export default function AdminShippingGstPage() {
               isLoading={isSavingZone}
             >
               <span>{editingZoneId ? 'Save Changes' : 'Create Zone'}</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ============================================================ */}
+      {/* EDIT PRODUCT COURIER MODAL */}
+      {/* ============================================================ */}
+      <Modal
+        isOpen={!!editingProduct}
+        onClose={() => setEditingProduct(null)}
+        title={`Courier Settings: ${editingProduct?.name || ''}`}
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveProductShipping} className="space-y-4 pt-2">
+          {productModalError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
+              <RiAlertLine className="h-4 w-4 shrink-0 text-rose-600" />
+              <span>{productModalError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-800 block mb-1">
+              Courier Calculation Mode
+            </label>
+            <select
+              value={prodShippingType}
+              onChange={(e) => setProdShippingType(e.target.value as any)}
+              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
+            >
+              <option value="DEFAULT">DEFAULT (Inherit Store Global Policy)</option>
+              <option value="FIXED">FIXED (Custom Flat Courier Fee)</option>
+              <option value="FREE">FREE (Always Free Delivery)</option>
+              <option value="QUANTITY_BASED">QUANTITY_BASED (Scaled by Pack Quantity)</option>
+              <option value="WEIGHT_BASED">WEIGHT_BASED (Scaled by Total Grams/Kg)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-800 block mb-1">
+              Unit Weight Per Piece (Grams)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={prodUnitWeight}
+              onChange={(e) => setProdUnitWeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
+              placeholder="e.g. 2.5 for visiting card, 40 for brochure"
+              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Used to calculate order package weight automatically (500 cards @ 2.5g = 1.25 kg).
+            </p>
+          </div>
+
+          {prodShippingType === 'FIXED' && (
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Custom Courier Fee (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={prodCourierCharge}
+                onChange={(e) => setProdCourierCharge(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                placeholder="e.g. 100"
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
+              />
+            </div>
+          )}
+
+          {prodShippingType === 'QUANTITY_BASED' && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-800 block mb-1">
+                  Additional Surcharge Per Quantity Step (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={prodQtyStepRate}
+                  onChange={(e) => setProdQtyStepRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 25"
+                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              {/* Dynamic Quantity Slabs (e.g. 100 qty = ₹50) */}
+              <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                      <RiStackLine className="h-4 w-4 text-purple-600" />
+                      <span>Multiple Quantity Slabs (e.g. 100 qty = ₹50)</span>
+                    </span>
+                    <span className="text-[11px] text-purple-700 block">
+                      Configure custom courier milestones for this product.
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleAddSlab('single')}
+                    className="h-7 text-[11px] px-2 bg-white text-purple-800 border-purple-300 font-bold hover:bg-purple-50"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    <span>Add Slab</span>
+                  </Button>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="text-[10px] font-mono text-purple-700 font-bold uppercase">
+                    Quick Add:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(100, 50, 'single')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 100 qty (₹50)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(250, 80, 'single')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 250 qty (₹80)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(500, 120, 'single')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 500 qty (₹120)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(1000, 200, 'single')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 1000 qty (₹200)
+                  </button>
+                </div>
+
+                {/* Slabs List */}
+                <div className="space-y-2 mt-2">
+                  {prodQuantitySlabs.length === 0 ? (
+                    <div className="p-3 bg-white rounded-lg border border-purple-100 text-center text-xs text-purple-700">
+                      No custom quantity slabs added yet. Click &ldquo;Add Slab&rdquo; or use quick presets above.
+                    </div>
+                  ) : (
+                    prodQuantitySlabs.map((slab, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2.5 bg-white p-2.5 rounded-lg border border-purple-200 text-xs shadow-2xs"
+                      >
+                        <div className="flex-1">
+                          <span className="text-[10px] text-slate-500 font-medium block mb-1">
+                            Min Qty
+                          </span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={slab.minQty}
+                            onChange={(e) =>
+                              handleUpdateSlab(
+                                idx,
+                                'minQty',
+                                parseInt(e.target.value, 10) || 0,
+                                'single',
+                              )
+                            }
+                            className="w-full h-8 px-2.5 font-mono font-bold text-slate-900 border border-slate-200 rounded-md focus:outline-none focus:border-purple-600"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-[10px] text-slate-500 font-medium block mb-1">
+                            Courier Charge (₹)
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={slab.charge}
+                            onChange={(e) =>
+                              handleUpdateSlab(
+                                idx,
+                                'charge',
+                                parseFloat(e.target.value) || 0,
+                                'single',
+                              )
+                            }
+                            className="w-full h-8 px-2.5 font-mono font-bold text-purple-950 border border-slate-200 rounded-md bg-purple-50/50 focus:outline-none focus:border-purple-600"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSlab(idx, 'single')}
+                          className="p-1.5 text-slate-400 hover:text-red-600 mt-4 rounded-md hover:bg-red-50 transition-colors"
+                          title="Remove slab"
+                        >
+                          <RiDeleteBinLine className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-800 block mb-1">
+              Product Free Shipping Threshold Override (₹)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={prodFreeThreshold}
+              onChange={(e) => setProdFreeThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
+              placeholder="e.g. 1000"
+              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+            />
+          </div>
+
+          {/* Sync across same category checkbox */}
+          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={applyToEntireCategory}
+                onChange={(e) => setApplyToEntireCategory(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded text-amber-600 border-amber-300 focus:ring-amber-500"
+              />
+              <div>
+                <span className="text-xs font-bold text-amber-950 block">
+                  Apply to all products in &ldquo;{editingProduct?.categoryName}&rdquo; category
+                </span>
+                <span className="text-[11px] text-amber-800 block">
+                  Automatically copies this courier calculation mode, unit weight, and quantity slabs to all products in this category.
+                </span>
+              </div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEditingProduct(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSavingProductSettings}
+              isLoading={isSavingProductSettings}
+            >
+              <span>{applyToEntireCategory ? 'Apply to Entire Category' : 'Save Product Rules'}</span>
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ============================================================ */}
+      {/* BATCH CATEGORY COURIER MODAL */}
+      {/* ============================================================ */}
+      <Modal
+        isOpen={isBatchCategoryModalOpen}
+        onClose={() => setIsBatchCategoryModalOpen(false)}
+        title={
+          selectedProductIds.length > 0
+            ? `Batch Configure Courier: ${selectedProductIds.length} Selected Products`
+            : `Batch Configure Courier by Category`
+        }
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveBatchCategoryShipping} className="space-y-4 pt-2">
+          {batchModalError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
+              <RiAlertLine className="h-4 w-4 shrink-0 text-rose-600" />
+              <span>{batchModalError}</span>
+            </div>
+          )}
+
+          {/* Target Category Selection */}
+          {selectedProductIds.length === 0 ? (
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Target Category <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={batchTargetCategoryId}
+                onChange={(e) => setBatchTargetCategoryId(e.target.value)}
+                required
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
+              >
+                <option value="">-- Choose Category to Configure --</option>
+                {distinctCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Courier mode and quantity slabs will be applied to every product in this category.
+              </p>
+            </div>
+          ) : (
+            <div className="p-3 bg-purple-50 rounded-lg border border-purple-200 text-xs text-purple-900">
+              Applying courier rules directly to <strong>{selectedProductIds.length} selected product(s)</strong> across the catalogue.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Courier Mode
+              </label>
+              <select
+                value={batchShippingType}
+                onChange={(e) => setBatchShippingType(e.target.value as any)}
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
+              >
+                <option value="QUANTITY_BASED">QUANTITY_BASED (Multiple Quantity Slabs)</option>
+                <option value="DEFAULT">DEFAULT (Store Global Policy)</option>
+                <option value="FIXED">FIXED (Flat Rate Per Item)</option>
+                <option value="FREE">FREE (Always Free Delivery)</option>
+                <option value="WEIGHT_BASED">WEIGHT_BASED (Weight-Tier Scaled)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Unit Weight Per Piece (Grams)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={batchUnitWeight}
+                onChange={(e) => setBatchUnitWeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                placeholder="e.g. 2.5 for visiting card"
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+              />
+            </div>
+          </div>
+
+          {batchShippingType === 'FIXED' && (
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Flat Courier Fee (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={batchCourierCharge}
+                onChange={(e) => setBatchCourierCharge(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                placeholder="e.g. 100"
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
+              />
+            </div>
+          )}
+
+          {batchShippingType === 'QUANTITY_BASED' && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-800 block mb-1">
+                  Fallback Surcharge Per Quantity Step (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={batchQtyStepRate}
+                  onChange={(e) => setBatchQtyStepRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                  placeholder="e.g. 25"
+                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
+                />
+              </div>
+
+              {/* Multiple Quantity Slabs (Batch) */}
+              <div className="p-3.5 bg-purple-50/70 rounded-xl border border-purple-200 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                      <RiStackLine className="h-4 w-4 text-purple-600" />
+                      <span>Category Quantity Slabs (e.g. 100 qty = ₹50)</span>
+                    </span>
+                    <span className="text-[11px] text-purple-700 block">
+                      These milestones will be assigned to all products in this category.
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleAddSlab('batch')}
+                    className="h-7 text-[11px] px-2 bg-white text-purple-800 border-purple-300 font-bold hover:bg-purple-50"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    <span>Add Slab</span>
+                  </Button>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="text-[10px] font-mono text-purple-700 font-bold uppercase">
+                    Quick Add:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(100, 50, 'batch')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 100 qty (₹50)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(250, 80, 'batch')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 250 qty (₹80)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(500, 120, 'batch')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 500 qty (₹120)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAddQuickPreset(1000, 200, 'batch')}
+                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
+                  >
+                    + 1000 qty (₹200)
+                  </button>
+                </div>
+
+                {/* Slabs List */}
+                <div className="space-y-2 mt-2">
+                  {batchQuantitySlabs.map((slab, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center gap-2.5 bg-white p-2.5 rounded-lg border border-purple-200 text-xs shadow-2xs"
+                    >
+                      <div className="flex-1">
+                        <span className="text-[10px] text-slate-500 font-medium block mb-1">
+                          Min Qty
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={slab.minQty}
+                          onChange={(e) =>
+                            handleUpdateSlab(
+                              idx,
+                              'minQty',
+                              parseInt(e.target.value, 10) || 0,
+                              'batch',
+                            )
+                          }
+                          className="w-full h-8 px-2.5 font-mono font-bold text-slate-900 border border-slate-200 rounded-md focus:outline-none focus:border-purple-600"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-[10px] text-slate-500 font-medium block mb-1">
+                          Courier Charge (₹)
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={slab.charge}
+                          onChange={(e) =>
+                            handleUpdateSlab(
+                              idx,
+                              'charge',
+                              parseFloat(e.target.value) || 0,
+                              'batch',
+                            )
+                          }
+                          className="w-full h-8 px-2.5 font-mono font-bold text-purple-950 border border-slate-200 rounded-md bg-purple-50/50 focus:outline-none focus:border-purple-600"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSlab(idx, 'batch')}
+                        className="p-1.5 text-slate-400 hover:text-red-600 mt-4 rounded-md hover:bg-red-50 transition-colors"
+                        title="Remove slab"
+                      >
+                        <RiDeleteBinLine className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-slate-800 block mb-1">
+              Free Shipping Threshold Override (₹)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={batchFreeThreshold}
+              onChange={(e) => setBatchFreeThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
+              placeholder="e.g. 1000"
+              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsBatchCategoryModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSavingBatchCategory}
+              isLoading={isSavingBatchCategory}
+            >
+              <span>Apply Courier Settings to Category</span>
             </Button>
           </div>
         </form>

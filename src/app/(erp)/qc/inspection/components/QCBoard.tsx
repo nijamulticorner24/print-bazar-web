@@ -130,26 +130,30 @@ export function QCBoard() {
     const specs = (item?.specifications as any) || {};
     const artworkVersion = item?.artworkVersions?.[0];
 
-    const override = localCardOverrides[order.id];
-    let cardStatus = 'QUEUED';
-    if (override) {
-      cardStatus = override.status;
-    } else if (order.status === 'ON_HOLD') {
-      cardStatus = 'ON_HOLD';
-    } else if (
+    const checklists = order.qcChecklists || [];
+    const hasPassed = checklists.some(
+      (c: any) => c.type === 'FINAL_QC' && c.outcome === 'PASS',
+    );
+    const isPassedToPacking =
+      hasPassed ||
       order.status === 'PACKING' ||
       order.status === 'READY_FOR_DISPATCH' ||
       order.status === 'OUT_FOR_DELIVERY' ||
-      order.status === 'DELIVERED'
-    ) {
+      order.status === 'DELIVERED' ||
+      order.jobCards?.some((j: any) => j.currentStation === 'PACKING' || j.status === 'PASSED');
+
+    const override = localCardOverrides[order.id];
+    let cardStatus = 'QUEUED';
+    if (isPassedToPacking && (!override || override.status !== 'ON_HOLD')) {
       cardStatus = 'APPROVED';
+    } else if (override) {
+      cardStatus = override.status;
+    } else if (order.status === 'ON_HOLD') {
+      cardStatus = 'ON_HOLD';
     } else {
-      const checklists = order.qcChecklists || [];
-      const hasPassed = checklists.some(
-        (c: any) => c.type === 'FINAL_QC' && c.outcome === 'PASS',
-      );
-      if (hasPassed) {
-        cardStatus = 'APPROVED';
+      const activeJob = order.jobCards?.find((j: any) => j.status === 'QC_INSPECTION');
+      if (activeJob) {
+        cardStatus = 'IN_INSPECTION';
       }
     }
 
@@ -216,21 +220,22 @@ export function QCBoard() {
 
   // Metrics
   const calculatedMetrics = useMemo(() => {
-    const finalCount = finalQueue.length;
-    const inReview = Object.values(localCardOverrides).filter((o) => o.status === 'IN_INSPECTION').length;
-    const holdsCount = Object.values(localCardOverrides).filter((o) => o.status === 'ON_HOLD').length;
-    const passedToday = Object.values(localCardOverrides).filter((o) => o.status === 'APPROVED').length + 8;
+    const totalActive = allCards.length;
+    const inReview = allCards.filter((c) => c.status === 'IN_INSPECTION').length;
+    const holdsCount = allCards.filter((c) => c.status === 'ON_HOLD').length;
+    const passedToday = allCards.filter((c) => c.status === 'APPROVED').length;
+    const queuedCount = allCards.filter((c) => c.status === 'QUEUED').length;
 
     return {
-      totalActive: finalCount,
+      totalActive,
       preQcQueue: 0,
       inReview,
-      finalQcQueue: finalCount,
+      finalQcQueue: queuedCount + inReview,
       passedToday,
-      firstTimePassRate: 98.4,
+      firstTimePassRate: totalActive > 0 ? Number(((passedToday / totalActive) * 100).toFixed(1)) : 98.4,
       holdsCount,
     };
-  }, [finalQueue, localCardOverrides]);
+  }, [allCards]);
 
   // Drag and Drop
   const handleCardDragStart = (e: React.DragEvent, card: QCJobCardDto) => {

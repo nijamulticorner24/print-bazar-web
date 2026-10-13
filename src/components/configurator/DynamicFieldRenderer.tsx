@@ -280,7 +280,7 @@ export function DynamicFieldRenderer({
                                 <div className="flex flex-col items-center justify-center gap-1.5 py-1">
                                   <div className="h-5 w-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
                                   <span className="text-xs font-bold text-purple-900">
-                                    Uploading & Validating Resolution...
+                                    Checking Resolution & Uploading...
                                   </span>
                                 </div>
                               ) : (
@@ -288,8 +288,11 @@ export function DynamicFieldRenderer({
                                   <div className="text-sm font-bold text-purple-900 group-hover:text-purple-950">
                                     {placeholder}
                                   </div>
-                                  <div className="text-xs text-slate-400 mt-1 font-sans">
-                                    PNG, JPG, WEBP, SVG up to 10MB
+                                  <div className="text-[11px] font-bold text-purple-700 bg-purple-100/70 inline-block px-2.5 py-0.5 rounded-full mt-1.5 font-mono">
+                                    Min {selectedOption.minMegapixels || 1.5} MP Quality • Max Not Limited
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-1 font-sans">
+                                    PNG, JPG, WEBP, PDF (Upload must match min {selectedOption.minMegapixels || 1.5} MP)
                                   </div>
                                 </>
                               )}
@@ -313,10 +316,12 @@ export function DynamicFieldRenderer({
                                   <div className="text-xs font-bold text-slate-900 truncate max-w-[220px] sm:max-w-[340px]">
                                     {uploadedFile.originalFileName}
                                   </div>
-                                  <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-2">
+                                  <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
                                     <span>{(uploadedFile.fileSize / (1024 * 1024)).toFixed(1)} MB</span>
                                     {uploadedFile.actualMegapixels ? (
-                                      <span>• {uploadedFile.actualMegapixels} MP</span>
+                                      <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                        ✓ {uploadedFile.actualMegapixels} MP (Verified ≥ {selectedOption.minMegapixels || 1.5} MP)
+                                      </span>
                                     ) : null}
                                   </div>
                                 </div>

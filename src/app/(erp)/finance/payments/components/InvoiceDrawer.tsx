@@ -135,8 +135,12 @@ export function InvoiceDrawer({ card, isOpen, onClose }: InvoiceDrawerProps) {
           {/* Tax Breakdown & Grand Total */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 font-mono text-xs">
             <div className="flex justify-between text-slate-600">
-              <span>Taxable Value (Subtotal):</span>
+              <span>Print Goods Subtotal:</span>
               <span>{formatCurrency(card.subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-slate-800 font-semibold py-1 border-t border-slate-200/60">
+              <span>Courier & Delivery Charges:</span>
+              <span>{card.shippingAmount ? formatCurrency(card.shippingAmount) : 'FREE / Included'}</span>
             </div>
             <div className="flex justify-between text-slate-600">
               <span>CGST (9.0%):</span>

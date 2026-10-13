@@ -25,7 +25,7 @@ import {
   RiShoppingBag3Line,
 } from 'react-icons/ri';
 import { formatCurrency, getEstimatedDeliveryText } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { api, ShippingTaxCalculationResult } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { CustomerAuthModal } from '@/components/auth/CustomerAuthModal';
 import { Button, Input, Badge } from '@/components/ui';
@@ -94,17 +94,7 @@ export default function CheckoutPage() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Authoritative Server Shipping & Tax Quote State
-  const [shippingTaxQuote, setShippingTaxQuote] = useState<{
-    shippingFee: number;
-    baseShippingFee: number;
-    isFreeShippingApplied: boolean;
-    freeShippingThreshold: number;
-    isFreeShippingEnabled: boolean;
-    matchedZone: { id: string; zoneName: string; pincodePrefix: string } | null;
-    gstRatePercent: number;
-    gstAmount: number;
-    grandTotal: number;
-  } | null>(null);
+  const [shippingTaxQuote, setShippingTaxQuote] = useState<ShippingTaxCalculationResult | null>(null);
   const [isCalculatingQuote, setIsCalculatingQuote] = useState(false);
 
   // Load cart from sessionStorage or fallback to localStorage
@@ -174,6 +164,18 @@ export default function CheckoutPage() {
           subtotal,
           postalCode: shippingAddress.postalCode,
           deliveryMethod,
+          items: cart
+            ? [
+                {
+                  productId: cart.productId,
+                  productName: cart.productName,
+                  quantity: cart.quantity || 500,
+                  unitPrice: cart.quote?.unitPrice || subtotal / (cart.quantity || 500),
+                  totalPrice: subtotal,
+                },
+              ]
+            : undefined,
+          totalQuantity: cart?.quantity || 500,
         });
         if (!isCancelled && res) {
           setShippingTaxQuote(res);
@@ -620,22 +622,40 @@ export default function CheckoutPage() {
                   <span>GST ({gstRatePercent}%)</span>
                   <span className="font-mono font-bold text-slate-900">{formatCurrency(tax)}</span>
                 </div>
-                <div className="flex justify-between text-slate-600 items-start">
-                  <div>
-                    <span>Shipping</span>
-                    {deliveryMethod === 'COURIER' && matchedZoneName && (
-                      <span className="text-[10px] text-slate-500 block font-sans">
-                        Zone: {matchedZoneName}
-                      </span>
+                {/* Delivery Charges - Prominently Displayed Separately */}
+                <div className="flex justify-between text-slate-600 items-start p-2.5 bg-slate-50/80 rounded-lg border border-slate-100">
+                  <div className="pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <Truck className="h-3.5 w-3.5 text-slate-700" />
+                      <span className="font-bold text-slate-900 text-xs">Courier & Delivery Charges</span>
+                    </div>
+                    {deliveryMethod === 'COURIER' && (
+                      <div className="space-y-0.5 mt-1">
+                        {matchedZoneName && (
+                          <span className="text-[10px] text-indigo-700 font-semibold block">
+                            Region / Zone: {matchedZoneName}
+                          </span>
+                        )}
+                        {shippingTaxQuote?.calculationBasis && (
+                          <span className="text-[10px] text-slate-500 font-mono block">
+                            {shippingTaxQuote.calculationBasis}
+                          </span>
+                        )}
+                        {shippingTaxQuote?.totalWeightKg ? (
+                          <span className="text-[10px] text-slate-400 font-mono block">
+                            Shipment Weight: {shippingTaxQuote.totalWeightKg} kg
+                          </span>
+                        ) : null}
+                      </div>
                     )}
                     {deliveryMethod === 'STORE_PICKUP' && (
-                      <span className="text-[10px] text-slate-500 block font-sans">
-                        Plant Pickup
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        Direct Plant Pickup (₹0.00)
                       </span>
                     )}
                   </div>
-                  <span className={`font-mono font-bold ${shipping === 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
-                    {shipping === 0 ? 'FREE' : formatCurrency(shipping)}
+                  <span className={`font-mono font-bold text-sm shrink-0 ${shipping === 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
+                    {shipping === 0 ? 'FREE (₹0)' : formatCurrency(shipping)}
                   </span>
                 </div>
 

@@ -12,20 +12,16 @@ import {
   RiShieldCheckLine,
   RiArrowLeftLine,
   RiSparklingFill,
-  RiTruckLine,
   RiMovieLine,
   RiPlayCircleLine,
-  RiMapPin2Line,
   RiCheckboxCircleLine,
   RiCloseLine,
 } from 'react-icons/ri';
-import { getEstimatedDeliveryText, isVideoMedia, formatCurrency } from '@/lib/utils';
+import { isVideoMedia, formatCurrency } from '@/lib/utils';
 import {
   api,
   DynamicProduct,
   resolveImageUrl,
-  ShippingGstSettings,
-  ShippingTaxCalculationResult,
 } from '@/lib/api';
 import {
   ProductConfigurationFlow,
@@ -48,18 +44,6 @@ export default function ProductDetailPage() {
   const [pendingCheckoutResult, setPendingCheckoutResult] = useState<ProductConfigurationResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Shipping & GST Settings & Pincode Checker State
-  const [shippingGstSettings, setShippingGstSettings] = useState<ShippingGstSettings | null>(null);
-  const [pincodeInput, setPincodeInput] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('pb2_user_pincode') || '';
-    }
-    return '';
-  });
-  const [pincodeQuote, setPincodeQuote] = useState<ShippingTaxCalculationResult | null>(null);
-  const [isCheckingPincode, setIsCheckingPincode] = useState(false);
-  const [pincodeError, setPincodeError] = useState<string | null>(null);
-
   // 1. Fetch Product Schema from API
   useEffect(() => {
     async function loadProduct() {
@@ -78,58 +62,6 @@ export default function ProductDetailPage() {
       loadProduct();
     }
   }, [slug]);
-
-  // Load Shipping & GST Settings
-  useEffect(() => {
-    api.getShippingGstSettings().then(setShippingGstSettings).catch(() => {});
-  }, []);
-
-  // Sync Pincode with other components
-  useEffect(() => {
-    const handlePincodeUpdate = (e: any) => {
-      const code = e?.detail ?? '';
-      if (typeof code === 'string' && code !== pincodeInput) {
-        setPincodeInput(code);
-      }
-    };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pincode-updated', handlePincodeUpdate);
-      return () => window.removeEventListener('pincode-updated', handlePincodeUpdate);
-    }
-  }, [pincodeInput]);
-
-  const handleCheckPincode = async (code: string) => {
-    const cleanCode = code.replace(/[^0-9]/g, '');
-    if (!cleanCode || cleanCode.length !== 6) {
-      setPincodeError('Please enter a valid 6-digit numeric postal code');
-      return;
-    }
-    setIsCheckingPincode(true);
-    setPincodeError(null);
-    try {
-      const subtotalEstimate = (Number(product?.basePrice) || 100) * (product?.minQuantity || 1);
-      const res = await api.calculateShippingAndTax({
-        subtotal: subtotalEstimate,
-        postalCode: cleanCode,
-        deliveryMethod: 'COURIER',
-      });
-      setPincodeQuote(res);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('pb2_user_pincode', cleanCode);
-        window.dispatchEvent(new CustomEvent('pincode-updated', { detail: cleanCode }));
-      }
-    } catch (err: any) {
-      setPincodeError(err?.message || 'Unable to calculate delivery quote for this pincode');
-    } finally {
-      setIsCheckingPincode(false);
-    }
-  };
-
-  useEffect(() => {
-    if (pincodeInput && pincodeInput.trim().length === 6 && product) {
-      handleCheckPincode(pincodeInput.trim());
-    }
-  }, [product?.id]);
 
   // Handle Add to Cart
   const handleAddToCart = (result: ProductConfigurationResult) => {
@@ -161,7 +93,7 @@ export default function ProductDetailPage() {
       balanceAmount,
       specificationsSnapshot: result.quote?.specificationsSnapshot || result.fieldValues,
       selectedOptionsSummary: result.quote?.selectedOptionsSummary || [],
-      shippingPincode: result.shippingPincode || (pincodeInput ? pincodeInput.trim() : undefined),
+      shippingPincode: result.shippingPincode || (typeof window !== 'undefined' ? localStorage.getItem('pb2_user_pincode') || undefined : undefined),
       quote: result.quote,
     };
 
@@ -210,7 +142,7 @@ export default function ProductDetailPage() {
       balanceAmount,
       specificationsSnapshot: result.quote?.specificationsSnapshot || result.fieldValues,
       selectedOptionsSummary: result.quote?.selectedOptionsSummary || [],
-      shippingPincode: result.shippingPincode || (pincodeInput ? pincodeInput.trim() : undefined),
+      shippingPincode: result.shippingPincode || (typeof window !== 'undefined' ? localStorage.getItem('pb2_user_pincode') || undefined : undefined),
       quote: result.quote,
     };
 
@@ -294,186 +226,6 @@ export default function ProductDetailPage() {
                 {product.description ||
                   'High-precision commercial print manufacturing calibrated on Heidelberg offset and HP Indigo digital work centers.'}
               </p>
-
-              {/* Expected Delivery & Dispatch Banner */}
-              {(() => {
-                const delivery = getEstimatedDeliveryText(product.productionDays || 2);
-                return (
-                  <div className="mt-4 p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50/50 to-slate-50 border border-emerald-200/80 rounded-xl space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
-                        <RiTruckLine className="h-4 w-4 text-emerald-600" />
-                        <span>Expected Delivery:</span>
-                        <span className="font-mono font-black text-emerald-800 underline decoration-emerald-400 underline-offset-2">
-                          {delivery.deliveryRange}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300">
-                        FREE SHIPPING
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-600 pt-0.5 border-t border-emerald-200/50">
-                      <span>⚡ Production Turnaround: <strong>{product.productionDays || 2} working days</strong></span>
-                      <span className="text-slate-500 font-mono">Dispatches by {delivery.dispatchDate}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Shipping & GST Regional Pincode Rate Checker Card */}
-              <div className="mt-4 p-4 bg-white border border-slate-200/90 rounded-xl space-y-3 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">
-                      <RiTruckLine className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-900 block">
-                        Shipping & GST Policy
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-medium">
-                        Standard Courier, Regional Zones & Applicable Taxes
-                      </span>
-                    </div>
-                  </div>
-                  {shippingGstSettings && (
-                    <span className="text-[10px] font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                      {shippingGstSettings.gstRate}% GST Applicable
-                    </span>
-                  )}
-                </div>
-
-                {/* Core Parameters Pill Grid */}
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/60">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Base Courier Fee
-                    </span>
-                    <span className="font-mono font-black text-slate-900 text-xs">
-                      {shippingGstSettings ? formatCurrency(shippingGstSettings.baseShippingFee) : '₹150.00'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                      Standard courier dispatch
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/60">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Free Shipping Over
-                    </span>
-                    <span className="font-mono font-black text-emerald-800 text-xs">
-                      {shippingGstSettings?.isFreeShippingEnabled
-                        ? formatCurrency(shippingGstSettings.freeShippingThreshold)
-                        : 'Flat Rate'}
-                    </span>
-                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                      {shippingGstSettings?.isFreeShippingEnabled ? 'Eligible on order subtotal' : 'Per configured zone'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Enter Pincode Interactive Delivery Estimator */}
-                <div className="pt-2 border-t border-slate-100 space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-800">
-                    <span className="flex items-center gap-1.5">
-                      <RiMapPin2Line className="h-3.5 w-3.5 text-amber-500" />
-                      <span>Check Delivery & Rates for your Pincode</span>
-                    </span>
-                    {pincodeQuote?.matchedZone && (
-                      <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
-                        Zone: {pincodeQuote.matchedZone.zoneName}
-                      </span>
-                    )}
-                  </div>
-
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleCheckPincode(pincodeInput);
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        maxLength={6}
-                        value={pincodeInput}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9]/g, '');
-                          setPincodeInput(val);
-                          setPincodeError(null);
-                          if (val.length === 6) {
-                            handleCheckPincode(val);
-                          }
-                        }}
-                        placeholder="Enter 6-digit Pincode (e.g. 560001)"
-                        className="w-full h-9 px-3 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-slate-900"
-                      />
-                      {pincodeInput && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPincodeInput('');
-                            setPincodeQuote(null);
-                            setPincodeError(null);
-                            if (typeof window !== 'undefined') {
-                              localStorage.removeItem('pb2_user_pincode');
-                              window.dispatchEvent(new CustomEvent('pincode-updated', { detail: '' }));
-                            }
-                          }}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                        >
-                          <RiCloseLine className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="sm"
-                      isLoading={isCheckingPincode}
-                      disabled={isCheckingPincode || pincodeInput.trim().length !== 6}
-                      className="shrink-0 h-9 px-3 text-xs"
-                    >
-                      <span>Check</span>
-                    </Button>
-                  </form>
-
-                  {pincodeError && (
-                    <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
-                      <RiAlertLine className="h-3.5 w-3.5 shrink-0" />
-                      <span>{pincodeError}</span>
-                    </p>
-                  )}
-
-                  {pincodeQuote && !pincodeError && (
-                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg space-y-1.5 text-xs">
-                      <div className="flex items-center justify-between font-bold text-emerald-950">
-                        <span className="flex items-center gap-1.5">
-                          <RiCheckboxCircleLine className="h-4 w-4 text-emerald-600 shrink-0" />
-                          <span>Deliverable to {pincodeInput}</span>
-                        </span>
-                        <span className="font-mono text-emerald-900 font-black">
-                          {pincodeQuote.shippingFee === 0 ? (
-                            <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">FREE SHIPPING</span>
-                          ) : (
-                            formatCurrency(pincodeQuote.shippingFee)
-                          )}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-emerald-900/80 flex items-center justify-between pt-1 border-t border-emerald-200/50">
-                        <span>
-                          {pincodeQuote.matchedZone
-                            ? `Matched rule: ${pincodeQuote.matchedZone.zoneName}`
-                            : 'Standard nationwide courier rate'}
-                        </span>
-                        <span className="font-mono">
-                          {pincodeQuote.gstRatePercent}% GST ({formatCurrency(pincodeQuote.gstAmount)})
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
 
               {/* Media Gallery Display (Photos & Video Demos) */}
               <div className="mt-6 space-y-3">

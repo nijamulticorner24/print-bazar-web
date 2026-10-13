@@ -27,6 +27,7 @@ export interface FinanceCardDto {
   productName: string;
   quantity: number;
   subtotal: number;
+  shippingAmount?: number;
   taxAmount: number;
   totalAmount: number;
   paidAmount: number;

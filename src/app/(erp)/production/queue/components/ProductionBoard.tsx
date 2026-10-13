@@ -350,18 +350,20 @@ export function ProductionBoard() {
       ) : boardData ? (
         <div className="w-full overflow-x-auto pb-4 custom-scrollbar">
           <div className="flex items-start gap-4 min-w-max pr-6">
-            {boardData.columns.map((column) => (
-              <ProductionColumn
-                key={column.id}
-                column={column}
-                userRole={user?.role}
-                onAction={handleCardAction}
-                onDropJob={handleDropJob}
-                draggedCard={draggedCard}
-                onCardDragStart={handleCardDragStart}
-                onCardDragEnd={handleCardDragEnd}
-              />
-            ))}
+            {boardData.columns
+              .filter((column) => column.key !== 'READY_FOR_PRODUCTION')
+              .map((column) => (
+                <ProductionColumn
+                  key={column.id}
+                  column={column}
+                  userRole={user?.role}
+                  onAction={handleCardAction}
+                  onDropJob={handleDropJob}
+                  draggedCard={draggedCard}
+                  onCardDragStart={handleCardDragStart}
+                  onCardDragEnd={handleCardDragEnd}
+                />
+              ))}
           </div>
         </div>
       ) : null}
@@ -405,7 +407,7 @@ export function ProductionBoard() {
       {boardData && (
         <BoardSettingsModal
           isOpen={isSettingsOpen}
-          columns={boardData.columns}
+          columns={boardData.columns.filter((c) => c.key !== 'READY_FOR_PRODUCTION')}
           onClose={() => setIsSettingsOpen(false)}
           onReorder={handleReorderColumns}
           onArchiveColumn={handleArchiveColumn}

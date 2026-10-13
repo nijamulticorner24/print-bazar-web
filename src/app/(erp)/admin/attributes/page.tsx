@@ -28,7 +28,8 @@ const TYPE_CONFIG = {
   SELECT: { label: 'Select Dropdown', code: 'SELECT' },
   RADIO: { label: 'Radio Buttons', code: 'RADIO' },
   CHECKBOX: { label: 'Checkboxes', code: 'CHECKBOX' },
-  TEXT: { label: 'Text Box', code: 'TEXT' },
+  TEXT: { label: 'Text Input', code: 'TEXT' },
+  TEXTAREA: { label: 'Text Box', code: 'TEXTAREA' },
 } as const;
 
 type SupportedType = keyof typeof TYPE_CONFIG;
@@ -67,6 +68,7 @@ export default function AdminAttributesPage() {
   const [setFileCount, setSetFileCount] = useState(false);
   const [valFileCount, setValFileCount] = useState<number>(1);
   const [valFileSlotLabels, setValFileSlotLabels] = useState<string[]>(['']);
+  const [valMinMegapixels, setValMinMegapixels] = useState<number>(1.5);
   const [valActive, setValActive] = useState(true);
   const valFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -154,7 +156,7 @@ export default function AdminAttributesPage() {
       } else {
         // Create new attribute with initial sensible default option
         const initialOptions =
-          formType === 'TEXT'
+          formType === 'TEXT' || formType === 'TEXTAREA'
             ? []
             : [
                 {
@@ -231,6 +233,7 @@ export default function AdminAttributesPage() {
     setSetFileCount(false);
     setValFileCount(1);
     setValFileSlotLabels(['']);
+    setValMinMegapixels(1.5);
     setValActive(true);
     setValuesModalError(null);
   };
@@ -246,6 +249,7 @@ export default function AdminAttributesPage() {
     setSetFileCount(hasFiles);
     const count = opt.fileCount || 1;
     setValFileCount(count);
+    setValMinMegapixels(opt.minMegapixels ? Number(opt.minMegapixels) : 1.5);
     if (opt.fileSlotLabels && opt.fileSlotLabels.length > 0) {
       setValFileSlotLabels([...opt.fileSlotLabels]);
     } else {
@@ -314,6 +318,11 @@ export default function AdminAttributesPage() {
       fileSlotLabels: setFileCount
         ? valFileSlotLabels.map((s) => s.trim()).filter((s) => s.length > 0)
         : undefined,
+      minMegapixels: setFileCount
+        ? Number(valMinMegapixels) > 0
+          ? Number(valMinMegapixels)
+          : 1.5
+        : null,
       isDefault:
         editingValIndex !== null
           ? modalOptions[editingValIndex]?.isDefault
@@ -504,7 +513,8 @@ export default function AdminAttributesPage() {
                 <option value="SELECT">Select Dropdown</option>
                 <option value="RADIO">Radio Buttons</option>
                 <option value="CHECKBOX">Checkboxes</option>
-                <option value="TEXT">Text Box</option>
+                <option value="TEXT">Text Input</option>
+                <option value="TEXTAREA">Text Box</option>
               </select>
             </div>
           </div>
@@ -581,7 +591,8 @@ export default function AdminAttributesPage() {
               <option value="SELECT">Select Dropdown</option>
               <option value="RADIO">Radio Buttons</option>
               <option value="CHECKBOX">Checkboxes</option>
-              <option value="TEXT">Text Box</option>
+              <option value="TEXT">Text Input</option>
+              <option value="TEXTAREA">Text Box</option>
             </select>
 
             {/* Filter by Status */}
@@ -681,7 +692,7 @@ export default function AdminAttributesPage() {
 
                       {/* Values Count */}
                       <td className="py-3 px-4 font-mono text-slate-700">
-                        {attr.type === 'TEXT' ? (
+                        {attr.type === 'TEXT' || attr.type === 'TEXTAREA' ? (
                           <span className="text-slate-400 italic font-sans text-[11px]">
                             Freeform Text
                           </span>
@@ -789,14 +800,14 @@ export default function AdminAttributesPage() {
             </div>
           )}
 
-          {valuesModalAttr?.type === 'TEXT' ? (
+          {valuesModalAttr?.type === 'TEXT' || valuesModalAttr?.type === 'TEXTAREA' ? (
             <div className="p-6 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-2">
               <Layers className="w-8 h-8 mx-auto text-slate-400" />
               <h4 className="font-semibold text-slate-900 text-sm">
-                Text Box Attribute
+                {valuesModalAttr?.type === 'TEXTAREA' ? 'Text Box' : 'Text Input'} Attribute
               </h4>
               <p className="text-slate-500 text-xs max-w-sm mx-auto">
-                Text Box attributes capture custom freeform customer input (such as names, custom dimensions, or notes) and do not require predefined option values.
+                {valuesModalAttr?.type === 'TEXTAREA' ? 'Text Box' : 'Text Input'} attributes capture custom freeform customer input (such as names, custom dimensions, or notes) and do not require predefined option values.
               </p>
             </div>
           ) : (
@@ -859,20 +870,51 @@ export default function AdminAttributesPage() {
                 {/* Conditional Set File Count Box (Matching Screenshot Exactly) */}
                 {setFileCount && (
                   <div className="p-4 bg-slate-50/40 rounded-2xl border border-slate-200/90 space-y-3.5 animate-in fade-in duration-150">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-800 mb-1">
-                        File Count (Qty)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={valFileCount}
-                        onChange={(e) =>
-                          handleFileCountChange(Math.max(1, parseInt(e.target.value) || 1))
-                        }
-                        className="w-full h-10 px-3 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-purple-600 transition-colors"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-800 mb-1">
+                          File Count (Qty)
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={valFileCount}
+                          onChange={(e) =>
+                            handleFileCountChange(Math.max(1, parseInt(e.target.value) || 1))
+                          }
+                          className="w-full h-10 px-3 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-purple-600 transition-colors font-mono font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-800 mb-1">
+                          Minimum Image Resolution (MP)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            min="0.1"
+                            step="0.1"
+                            value={valMinMegapixels}
+                            onChange={(e) =>
+                              setValMinMegapixels(parseFloat(e.target.value) || 1.5)
+                            }
+                            placeholder="1.5"
+                            className="w-full h-10 px-3 pr-10 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-purple-600 transition-colors font-mono font-bold"
+                          />
+                          <span className="absolute right-3 top-2.5 text-xs font-bold text-purple-700">
+                            MP
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-purple-50 rounded-xl border border-purple-200/80 text-[11px] text-purple-900 flex items-start gap-2">
+                      <span className="font-bold shrink-0">Client Quality Gate:</span>
+                      <span>
+                        Client-side upload will strictly enforce minimum <strong>{valMinMegapixels || 1.5} MP</strong> resolution (e.g. 1500×1000px). Uploads below this threshold are blocked. Maximum resolution has no limit.
+                      </span>
                     </div>
 
                     <div>
@@ -1055,7 +1097,7 @@ export default function AdminAttributesPage() {
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
                                   <FileText className="w-2.5 h-2.5 shrink-0" />
                                   <span>
-                                    Count: {opt.fileCount}
+                                    Count: {opt.fileCount} • Min {opt.minMegapixels || 1.5} MP
                                     {opt.fileSlotLabels && opt.fileSlotLabels.length > 0
                                       ? ` (${opt.fileSlotLabels.join(', ')})`
                                       : ''}

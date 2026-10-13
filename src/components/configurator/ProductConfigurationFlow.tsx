@@ -158,7 +158,79 @@ export function ProductConfigurationFlow({
   // ---------------------------------------------------------------------------
   // 2. QUANTITY STATE (Synchronized to Admin Backend Configuration)
   // ---------------------------------------------------------------------------
+  // 2. QUANTITY STATE (Synchronized to Admin Backend Configuration)
+  // ---------------------------------------------------------------------------
+  const isSingleType = useMemo(() => {
+    return (
+      product.pricingModel === 'SINGLE' ||
+      product.pricingModel === 'SINGLE_RANGE' ||
+      product.tags?.includes('SINGLE_TYPE')
+    );
+  }, [product.pricingModel, product.tags]);
+
+  // Parse quantity ranges for Single Type products
+  const singleTypeRanges = useMemo(() => {
+    if (!isSingleType) return [];
+    const rangesTag = product.tags?.find((t) => t.startsWith('RANGES:'));
+    if (rangesTag) {
+      const raw = rangesTag.replace('RANGES:', '');
+      const parts = raw.split(',').map((p) => p.trim()).filter(Boolean);
+      const parsed: { min: number; max: number; label: string }[] = [];
+      for (const p of parts) {
+        const match = p.match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+        if (match) {
+          parsed.push({
+            min: parseInt(match[1], 10),
+            max: parseInt(match[2], 10),
+            label: `${match[1]}–${match[2]}`,
+          });
+        }
+      }
+      if (parsed.length > 0) return parsed;
+    }
+    if (product.pricingMatrices && Array.isArray(product.pricingMatrices)) {
+      const map = new Map<string, { min: number; max: number; label: string }>();
+      for (const m of product.pricingMatrices) {
+        const min = Number(m.minQty);
+        const max = Number(m.maxQty);
+        if (!isNaN(min) && !isNaN(max) && min > 0 && max >= min) {
+          const key = `${min}-${max}`;
+          if (!map.has(key)) {
+            map.set(key, { min, max, label: `${min}–${max}` });
+          }
+        }
+      }
+      return Array.from(map.values()).sort((a, b) => a.min - b.min);
+    }
+    return [];
+  }, [isSingleType, product.tags, product.pricingMatrices]);
+
+  const singleMinQty = useMemo(() => {
+    return singleTypeRanges.length > 0 ? singleTypeRanges[0].min : (Number(product.minQuantity) || 1);
+  }, [singleTypeRanges, product.minQuantity]);
+
+  const singleMaxQty = useMemo(() => {
+    return singleTypeRanges.length > 0
+      ? singleTypeRanges[singleTypeRanges.length - 1].max
+      : (Number(product.maxQuantity) || 100000);
+  }, [singleTypeRanges, product.maxQuantity]);
+
+  const singleTypeQuickSelectQtys = useMemo(() => {
+    if (!singleTypeRanges.length) {
+      const min = Math.max(1, Number(product.minQuantity) || 1);
+      const max = Number(product.maxQuantity) || 20;
+      return [min, 5, 10, 20].filter((q) => q <= max);
+    }
+    const set = new Set<number>();
+    for (const r of singleTypeRanges) {
+      set.add(r.min);
+      set.add(r.max);
+    }
+    return Array.from(set).sort((a, b) => a - b);
+  }, [singleTypeRanges, product.minQuantity, product.maxQuantity]);
+
   const backendQuantities = useMemo(() => {
+    if (isSingleType) return [];
     if (product.pricingMatrices && Array.isArray(product.pricingMatrices) && product.pricingMatrices.length > 0) {
       const qtys = Array.from(
         new Set(product.pricingMatrices.map((m: any) => Number(m.minQty))),
@@ -168,10 +240,13 @@ export function ProductConfigurationFlow({
       if (qtys.length > 0) return qtys;
     }
     return [];
-  }, [product.pricingMatrices]);
+  }, [isSingleType, product.pricingMatrices]);
 
   const [quantity, setQuantity] = useState<number>(() => {
     if (initialQuantity) return initialQuantity;
+    if (isSingleType) {
+      return singleTypeRanges.length > 0 ? singleTypeRanges[0].min : (product.minQuantity || 1);
+    }
     if (product.pricingMatrices && Array.isArray(product.pricingMatrices) && product.pricingMatrices.length > 0) {
       const qtys = Array.from(
         new Set(product.pricingMatrices.map((m: any) => Number(m.minQty))),
@@ -183,12 +258,12 @@ export function ProductConfigurationFlow({
     return product.minQuantity || 1;
   });
 
-  // Ensure quantity is locked to backend quantities when available
+  // Ensure quantity is locked to backend quantities when available (Variable Type only)
   useEffect(() => {
-    if (backendQuantities.length > 0 && !backendQuantities.includes(quantity)) {
+    if (!isSingleType && backendQuantities.length > 0 && !backendQuantities.includes(quantity)) {
       setQuantity(backendQuantities[0]);
     }
-  }, [backendQuantities, quantity]);
+  }, [isSingleType, backendQuantities, quantity]);
 
   // ---------------------------------------------------------------------------
   // 3. ARTWORK & DYNAMIC SLOT CONFIGURATION STATE
@@ -238,12 +313,13 @@ export function ProductConfigurationFlow({
 
   // Dynamically resolve active upload slots from selected attribute options
   const activeSlotConfigs = useMemo(() => {
-    const slots: { slotKey: string; label: string; fieldKey: string }[] = [];
+    const slots: { slotKey: string; label: string; fieldKey: string; minMegapixels: number }[] = [];
     for (const field of visibleFields) {
       const selectedOptValue = fieldValues[field.key];
       const opt = field.options?.find((o) => String(o.value) === String(selectedOptValue));
       if (opt && opt.fileCount && opt.fileCount > 0) {
         const count = opt.fileCount;
+        const requiredMinMP = opt.minMegapixels ? Number(opt.minMegapixels) : 1.5;
         const rawLabels =
           opt.fileSlotLabels && opt.fileSlotLabels.length > 0
             ? opt.fileSlotLabels
@@ -255,6 +331,7 @@ export function ProductConfigurationFlow({
             slotKey: label.toLowerCase().replace(/\s+/g, '_'),
             label,
             fieldKey: field.key,
+            minMegapixels: requiredMinMP,
           });
         }
       }
@@ -280,12 +357,64 @@ export function ProductConfigurationFlow({
     return vals.length > 0 ? vals[0] : artworkFile;
   }, [activeSlotFiles, artworkFile]);
 
-  // Slot file upload handler
+  // Slot file upload handler with client-side 1.5 MP minimum quality verification
   const handleSlotFileUpload = async (slotKey: string, file: File) => {
     setUploadingSlots((prev) => ({ ...prev, [slotKey]: true }));
     setSlotErrors((prev) => ({ ...prev, [slotKey]: '' }));
+
+    // Resolve slot-specific minimum MP (defaults to 1.5 MP, max not limited)
+    const slotCfg = activeSlotConfigs.find((s) => s.slotKey === slotKey);
+    const targetMinMP = slotCfg?.minMegapixels || 1.5;
+
+    // CLIENT-SIDE VALIDATION: Check image resolution directly before proceeding
+    const isImageFile = file.type.startsWith('image/') || /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
+    if (isImageFile && !/\.svg$/i.test(file.name)) {
+      try {
+        const imageRes = await new Promise<{ width: number; height: number; megapixels: number }>((resolve, reject) => {
+          const img = new Image();
+          const objectUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const w = img.naturalWidth || img.width;
+            const h = img.naturalHeight || img.height;
+            const mp = Math.round(((w * h) / 1000000) * 100) / 100;
+            resolve({ width: w, height: h, megapixels: mp });
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Invalid image file. Could not read image dimensions.'));
+          };
+          img.src = objectUrl;
+        });
+
+        // Enforce: Minimum 1.5 MP required, maximum not limited
+        if (imageRes.megapixels < targetMinMP) {
+          setSlotErrors((prev) => ({
+            ...prev,
+            [slotKey]: `Uploaded image resolution is ${imageRes.megapixels} MP (${imageRes.width}×${imageRes.height}px). Minimum ${targetMinMP} MP is required for crisp print reproduction (No maximum limit). Please upload a higher resolution image.`,
+          }));
+          setUploadingSlots((prev) => ({ ...prev, [slotKey]: false }));
+          return;
+        }
+      } catch (err: any) {
+        setSlotErrors((prev) => ({
+          ...prev,
+          [slotKey]: err?.message || 'Could not verify image resolution.',
+        }));
+        setUploadingSlots((prev) => ({ ...prev, [slotKey]: false }));
+        return;
+      }
+    }
+
     try {
-      const res = await api.uploadArtwork(file, product.id, minMegapixels);
+      const res = await api.uploadArtwork(file, product.id, targetMinMP);
+      if (res.actualMegapixels !== null && res.actualMegapixels < targetMinMP) {
+        setSlotErrors((prev) => ({
+          ...prev,
+          [slotKey]: `Image quality is ${res.actualMegapixels} MP. Minimum ${targetMinMP} MP is required. Please upload a higher resolution file.`,
+        }));
+        return;
+      }
       const state: FlowArtworkState = {
         fileUrl: res.fileUrl,
         storageKey: res.storageKey,
@@ -295,7 +424,7 @@ export function ProductConfigurationFlow({
         width: res.width,
         height: res.height,
         actualMegapixels: res.actualMegapixels,
-        requiredMegapixels: res.requiredMegapixels,
+        requiredMegapixels: targetMinMP,
         qualityStatus: res.qualityStatus,
         warningMessage: res.warningMessage,
         warningAccepted: res.qualityStatus === 'PASSED',
@@ -376,8 +505,14 @@ export function ProductConfigurationFlow({
   }, [visibleFields, fieldValues, artworkReq, activeSlotConfigs, slotFiles]);
 
   const isQuantityCompleted = useMemo(() => {
+    if (isSingleType) {
+      if (singleTypeRanges.length > 0) {
+        return quantity >= singleMinQty && quantity <= singleMaxQty && Number.isInteger(quantity) && quantity > 0;
+      }
+      return quantity >= (product.minQuantity || 1) && Number.isInteger(quantity) && quantity > 0;
+    }
     return quantity >= (product.minQuantity || 1);
-  }, [quantity, product.minQuantity]);
+  }, [isSingleType, singleTypeRanges, singleMinQty, singleMaxQty, product.minQuantity, quantity]);
 
   // Dynamic active steps: Clean 3-step navigation
   const activeStepsList: StepId[] = useMemo(() => {
@@ -649,9 +784,15 @@ export function ProductConfigurationFlow({
       }
     }
 
-    // Minimum Quantity
-    if (quantity < (product.minQuantity || 1)) {
-      errors.push(`Minimum quantity is ${product.minQuantity || 1} units.`);
+    // Minimum / Maximum Quantity
+    if (isSingleType && singleTypeRanges.length > 0) {
+      if (quantity < singleMinQty || quantity > singleMaxQty) {
+        errors.push(`Quantity must be within configured ranges (${singleMinQty} to ${singleMaxQty} units).`);
+      }
+    } else {
+      if (quantity < (product.minQuantity || 1)) {
+        errors.push(`Minimum quantity is ${product.minQuantity || 1} units.`);
+      }
     }
 
     // Required Artwork
@@ -697,10 +838,79 @@ export function ProductConfigurationFlow({
 
   const isValid = validationErrors.length === 0;
 
+  const matchedSingleRange = useMemo(() => {
+    if (!isSingleType || singleTypeRanges.length === 0) return null;
+    return singleTypeRanges.find((r) => quantity >= r.min && quantity <= r.max) || null;
+  }, [isSingleType, singleTypeRanges, quantity]);
+
+  const { singlePerPiecePrice, singleTotalPrice, isSingleOutOfRange } = useMemo(() => {
+    if (!isSingleType) {
+      return { singlePerPiecePrice: 0, singleTotalPrice: 0, isSingleOutOfRange: false };
+    }
+    const outOfRange = singleTypeRanges.length > 0 && (quantity < singleMinQty || quantity > singleMaxQty);
+
+    if (quote?.subtotal && quantity > 0) {
+      const perPiece = Number(quote.subtotal) / quantity;
+      return {
+        singlePerPiecePrice: perPiece,
+        singleTotalPrice: Number(quote.subtotal),
+        isSingleOutOfRange: outOfRange,
+      };
+    }
+
+    // Client-side instant calculation from product.pricingMatrices
+    let baseRate = Number(product.basePrice || 200);
+    let extraRate = 0;
+
+    if (product.pricingMatrices && Array.isArray(product.pricingMatrices) && product.pricingMatrices.length > 0) {
+      const baseRule = product.pricingMatrices.find((m: any) => {
+        const combo = m.attributeCombination || {};
+        const isBase = combo.isBasePrice === true || combo.type === 'BASE' || (!combo.type && !combo.attributeCode);
+        return m.minQty <= quantity && (m.maxQty === null || m.maxQty === undefined || m.maxQty >= quantity) && isBase;
+      });
+      if (baseRule) {
+        baseRate = Number(baseRule.unitPrice);
+      }
+
+      // Add-ons extra prices for this range
+      for (const [attrCode, attrVal] of Object.entries(fieldValues)) {
+        if (!attrVal) continue;
+        const attrRule = product.pricingMatrices.find((m: any) => {
+          const combo = m.attributeCombination || {};
+          return (
+            m.minQty <= quantity &&
+            (m.maxQty === null || m.maxQty === undefined || m.maxQty >= quantity) &&
+            (combo.type === 'ATTRIBUTE' || combo.attributeCode) &&
+            (combo.attributeCode === attrCode || combo[attrCode] === attrVal) &&
+            (combo.attributeValue === attrVal || combo[attrCode] === attrVal)
+          );
+        });
+        if (attrRule) {
+          extraRate += Number(attrRule.unitPrice || attrRule.attributeCombination?.extraPrice || 0);
+        }
+      }
+    }
+
+    const perPiece = baseRate + extraRate;
+    const total = perPiece * Math.max(1, quantity);
+
+    return {
+      singlePerPiecePrice: perPiece,
+      singleTotalPrice: total,
+      isSingleOutOfRange: outOfRange,
+    };
+  }, [isSingleType, singleTypeRanges, quantity, singleMinQty, singleMaxQty, quote?.subtotal, product.pricingMatrices, product.basePrice, fieldValues]);
+
   // Compute live monetary amounts
   const computedSubtotal = useMemo(() => {
-    return Number(quote?.subtotal || (Number(product.basePrice) * quantity));
-  }, [quote?.subtotal, product.basePrice, quantity]);
+    if (quote?.subtotal !== undefined && quote?.subtotal !== null) {
+      return Number(quote.subtotal);
+    }
+    if (isSingleType) {
+      return singleTotalPrice;
+    }
+    return Number(product.basePrice || 0) * quantity;
+  }, [quote?.subtotal, isSingleType, singleTotalPrice, product.basePrice, quantity]);
 
   const computedTax = useMemo(() => {
     return Number(quote?.totalTax || Math.round(computedSubtotal * 0.18 * 100) / 100);
@@ -988,6 +1198,165 @@ export function ProductConfigurationFlow({
           </div>
 
           <div className="space-y-4">
+            {isSingleType ? (
+              <div className="space-y-5">
+                {/* Clean Quantity Selector Box */}
+                <div className="p-5 sm:p-6 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-black text-slate-900 uppercase font-mono tracking-wider block">
+                        Select Quantity
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Configured ranges: {singleTypeRanges.map((r) => r.label).join(', ')} ({singleMinQty}–{singleMaxQty} units)
+                      </span>
+                    </div>
+
+                    {matchedSingleRange && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span>Qty {matchedSingleRange.label} Tier</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Minus Button, Input, Plus Button */}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((prev) => Math.max(singleMinQty, prev - 1))}
+                      disabled={quantity <= singleMinQty}
+                      className="h-12 w-12 rounded-xl bg-white border border-slate-300 text-slate-800 hover:bg-slate-100 active:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed font-black text-xl flex items-center justify-center transition shadow-2xs cursor-pointer"
+                      title="Decrease quantity by 1"
+                      id="single-qty-minus-btn"
+                    >
+                      -
+                    </button>
+
+                    <div className="relative flex-1 max-w-[200px]">
+                      <input
+                        type="number"
+                        min={singleMinQty}
+                        max={singleMaxQty}
+                        step={1}
+                        value={quantity}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setQuantity(val);
+                          } else if (e.target.value === '') {
+                            setQuantity(0);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (quantity < singleMinQty) setQuantity(singleMinQty);
+                          else if (quantity > singleMaxQty) setQuantity(singleMaxQty);
+                        }}
+                        id="single-qty-input"
+                        className="w-full h-12 bg-white border border-slate-300 rounded-xl text-center font-mono font-black text-slate-950 text-xl focus:outline-none focus:border-slate-900 shadow-2xs"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono uppercase font-bold text-slate-400 pointer-events-none">
+                        {quantity === 1 ? 'UNIT' : 'UNITS'}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((prev) => Math.min(singleMaxQty, prev + 1))}
+                      disabled={quantity >= singleMaxQty}
+                      className="h-12 w-12 rounded-xl bg-slate-900 text-[#FFED00] hover:bg-slate-800 active:bg-slate-950 disabled:opacity-40 disabled:cursor-not-allowed font-black text-xl flex items-center justify-center transition shadow-2xs cursor-pointer"
+                      title="Increase quantity by 1"
+                      id="single-qty-plus-btn"
+                    >
+                      +
+                    </button>
+
+                    <div className="ml-2 hidden sm:block">
+                      <span className="text-xs text-slate-500 font-medium">
+                        Selected: <strong className="text-slate-900 font-mono font-bold">{quantity} {quantity === 1 ? 'Unit' : 'Units'}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Out of range alert */}
+                  {isSingleOutOfRange && (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center gap-2 text-amber-900 text-xs">
+                      <RiAlertFill className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>
+                        Quantity {quantity} is outside the supported range ({singleMinQty}–{singleMaxQty} units). Please select a quantity within configured ranges.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Quick-Select Buttons */}
+                  {singleTypeQuickSelectQtys.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200/70 space-y-1.5">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                        Quick Select:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {singleTypeQuickSelectQtys.map((q) => {
+                          const isSelected = quantity === q;
+                          return (
+                            <button
+                              key={q}
+                              type="button"
+                              onClick={() => setQuantity(q)}
+                              className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold transition-all border cursor-pointer ${
+                                isSelected
+                                  ? 'bg-slate-900 text-[#FFED00] border-slate-900 shadow-xs ring-1 ring-slate-900'
+                                  : 'bg-white text-slate-700 hover:bg-slate-100 border-slate-200 hover:border-slate-300'
+                              }`}
+                              id={`single-quick-select-${q}`}
+                            >
+                              {q} {q === 1 ? 'unit' : 'units'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* CALCULATED PRICE SUMMARY SECTION */}
+                <div className="p-5 sm:p-6 bg-gradient-to-br from-amber-50/80 via-white to-amber-50/40 border border-amber-200/90 rounded-2xl shadow-card space-y-4 animate-in fade-in">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-200/60 pb-4">
+                    <div>
+                      <span className="text-[11px] font-mono font-black uppercase tracking-wider text-amber-900 block">
+                        CALCULATED PRICE ({quantity} {quantity === 1 ? 'UNIT' : 'UNITS'})
+                      </span>
+                      <div className="text-3xl sm:text-4xl font-black text-slate-950 font-display mt-1 tracking-tight">
+                        ₹{singleTotalPrice.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="sm:text-right bg-white p-3 sm:p-3.5 rounded-xl border border-amber-200/80 shadow-2xs">
+                      <span className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-500 block">
+                        PER PIECE
+                      </span>
+                      <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono mt-0.5">
+                        ₹{singlePerPiecePrice.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-600 gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                      <span>
+                        {matchedSingleRange
+                          ? `Pricing Bracket: Qty ${matchedSingleRange.label} (Base: ₹${singlePerPiecePrice.toFixed(2)} / pc)`
+                          : `Pricing Bracket: Custom (Qty ${quantity})`}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Pre-tax price • Taxes & delivery calculated at checkout
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
             {/* Quick Preset Buttons & Stepper */}
             {(() => {
               const hasBackendQuantities = backendQuantities.length > 0;
@@ -1241,6 +1610,8 @@ export function ProductConfigurationFlow({
                 </span>
               </div>
             </div>
+              </>
+            )}
           </div>
 
           {/* Action Footer */}
@@ -1287,34 +1658,6 @@ export function ProductConfigurationFlow({
 
             {/* Structured Specifications Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              {/* Expected Delivery & SLA */}
-              {(() => {
-                const delivery = getEstimatedDeliveryText(product.productionDays || 2);
-                return (
-                  <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200 flex items-center justify-between col-span-1 sm:col-span-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
-                        <RiTruckLine className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-mono font-bold text-emerald-800 uppercase block">
-                          Expected Delivery Window (SLA)
-                        </span>
-                        <span className="font-bold text-slate-900 text-xs sm:text-sm">
-                          {delivery.deliveryRange}{' '}
-                          <span className="text-slate-500 font-normal text-xs font-mono">
-                            ({product.productionDays || 2} Days Plant Run + Express Shipping)
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
-                      ON SCHEDULE
-                    </span>
-                  </div>
-                );
-              })()}
-
               {/* Standard Dimensions (Read-Only) */}
               {product.defaultSize && (
                 <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
@@ -1475,6 +1818,30 @@ export function ProductConfigurationFlow({
                   </button>
                 </div>
               )}
+              {/* Expected Delivery & Dispatch Banner */}
+              {(() => {
+                const delivery = getEstimatedDeliveryText(product.productionDays || 2);
+                return (
+                  <div className="col-span-1 sm:col-span-2 p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50/50 to-slate-50 border border-emerald-200/80 rounded-xl space-y-1.5 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950">
+                        <RiTruckLine className="h-4 w-4 text-emerald-600" />
+                        <span>Expected Delivery:</span>
+                        <span className="font-mono font-black text-emerald-800 underline decoration-emerald-400 underline-offset-2">
+                          {delivery.deliveryRange}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-300">
+                        FREE SHIPPING
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-600 pt-0.5 border-t border-emerald-200/50">
+                      <span>⚡ Production Turnaround: <strong>{product.productionDays || 2} working days</strong></span>
+                      <span className="text-slate-500 font-mono">Dispatches by {delivery.dispatchDate}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

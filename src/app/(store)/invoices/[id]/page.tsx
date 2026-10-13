@@ -1,10 +1,11 @@
 'use client';
 
-import React, { use } from 'react';
+import React, { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Printer, Download, ArrowLeft, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Printer, ArrowLeft, Truck, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
-import { Button, Badge } from '@/components/ui';
+import { Button } from '@/components/ui';
+import { api } from '@/lib/api';
 
 export default function InvoicePrintablePage({
   params,
@@ -13,6 +14,73 @@ export default function InvoicePrintablePage({
 }) {
   const resolvedParams = use(params);
   const invoiceId = resolvedParams.id || 'PB-2026-0001';
+
+  const [invoiceData, setInvoiceData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchInvoice = async () => {
+      try {
+        const data = await api.getInvoice(invoiceId);
+        if (!isCancelled && data) {
+          setInvoiceData(data);
+        }
+      } catch (err) {
+        console.warn('Could not load remote invoice record, showing formatted invoice view:', err);
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
+
+    fetchInvoice();
+    return () => {
+      isCancelled = true;
+    };
+  }, [invoiceId]);
+
+  // Derived values from real data or standard mock fallback
+  const order = invoiceData?.order;
+  const invoiceNo = invoiceData?.invoiceNumber || (invoiceId.startsWith('INV-') ? invoiceId : `INV-${invoiceId}`);
+  const invoiceDate = invoiceData?.issuedAt
+    ? new Date(invoiceData.issuedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '29-Sep-2026';
+  const orderNumber = order?.orderNumber || invoiceId;
+
+  // Buyer info
+  const buyerName = order?.customer?.companyName || order?.customer?.fullName || 'Acme Logistics Corp';
+  const buyerContact = order?.customer?.phone || '+91 98765 43210';
+  const buyerGstin = invoiceData?.customerGstin || order?.customer?.gstin || '27AABCA9911D1ZX';
+
+  const shippingAddr = order?.shippingAddress;
+  const deliveryAddressStr = shippingAddr
+    ? `${shippingAddr.street}, ${shippingAddr.city}, ${shippingAddr.state} — ${shippingAddr.postalCode}`
+    : 'BKC Industrial Hub, Tower 4, Bandra East, Mumbai, Maharashtra — 400051';
+
+  // Items
+  const items = order?.items && order.items.length > 0
+    ? order.items
+    : [
+        {
+          id: 'item-1',
+          productName: 'Premium Visiting Cards',
+          sku: '4911',
+          quantity: 500,
+          unitPrice: 2.5,
+          totalPrice: 1250,
+          specifications: {
+            paperGsm: '400 GSM Velvet Artboard',
+            finish: 'Matte Thermal Lamination • Spot UV Double Sided',
+          },
+        },
+      ];
+
+  const subtotal = Number(invoiceData?.subtotal || order?.subtotal || 1250);
+  const shippingFee = Number(invoiceData?.shippingAmount ?? order?.shippingAmount ?? 150);
+  const cgst = Number(invoiceData?.cgst ?? (subtotal * 0.09));
+  const sgst = Number(invoiceData?.sgst ?? (subtotal * 0.09));
+  const igst = Number(invoiceData?.igst ?? 0);
+  const grandTotal = Number(invoiceData?.grandTotal || (subtotal + shippingFee + cgst + sgst + igst));
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] py-10 px-4 sm:px-6">
@@ -64,15 +132,15 @@ export default function InvoicePrintablePage({
             <div className="mt-3 space-y-1 text-xs font-mono">
               <p>
                 <span className="text-slate-500">Invoice No:</span>{' '}
-                <strong className="text-slate-900">INV-2026-0891</strong>
+                <strong className="text-slate-900">{invoiceNo}</strong>
               </p>
               <p>
                 <span className="text-slate-500">Invoice Date:</span>{' '}
-                <strong>29-Sep-2026</strong>
+                <strong>{invoiceDate}</strong>
               </p>
               <p>
                 <span className="text-slate-500">Order Ref:</span>{' '}
-                <strong className="text-slate-900">#{invoiceId}</strong>
+                <strong className="text-slate-900">#{orderNumber}</strong>
               </p>
               <p>
                 <span className="text-slate-500">Place of Supply:</span>{' '}
@@ -88,12 +156,10 @@ export default function InvoicePrintablePage({
             <span className="font-mono uppercase font-bold text-slate-400 block text-[10px]">
               BILLED TO (BUYER)
             </span>
-            <h3 className="font-bold text-sm text-slate-900 mt-1">Acme Logistics Corp</h3>
+            <h3 className="font-bold text-sm text-slate-900 mt-1">{buyerName}</h3>
             <p className="text-slate-600 mt-1 leading-relaxed">
-              BKC Industrial Hub, Tower 4, Level 9<br />
-              Bandra-Kurla Complex, Bandra East<br />
-              Mumbai, Maharashtra — 400051<br />
-              <strong>GSTIN: 27AABCA9911D1ZX</strong> • Contact: +91 98765 43210
+              {deliveryAddressStr}<br />
+              <strong>GSTIN: {buyerGstin}</strong> • Contact: {buyerContact}
             </p>
           </div>
 
@@ -101,16 +167,15 @@ export default function InvoicePrintablePage({
             <span className="font-mono uppercase font-bold text-slate-400 block text-[10px]">
               SHIPPED TO (DELIVERY SITE)
             </span>
-            <h3 className="font-bold text-sm text-slate-900 mt-1">Acme Central Fulfillment Hub</h3>
+            <h3 className="font-bold text-sm text-slate-900 mt-1">{buyerName}</h3>
             <p className="text-slate-600 mt-1 leading-relaxed">
-              Gate 3, Warehouse Cluster B<br />
-              Bhiwandi Logistics Park, Thane<br />
-              Maharashtra — 421302
+              {deliveryAddressStr}<br />
+              Method: {order?.deliveryMethod === 'STORE_PICKUP' ? 'Plant Store Pickup' : 'Express Courier Delivery'}
             </p>
           </div>
         </div>
 
-        {/* Items Table */}
+        {/* Itemized Table Including Goods & Separately Displayed Delivery Charges */}
         <div className="py-6 border-b border-slate-200">
           <table className="w-full text-xs">
             <thead>
@@ -123,17 +188,55 @@ export default function InvoicePrintablePage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-sans">
-              <tr>
+              {items.map((item: any, idx: number) => {
+                const specParts = item.specifications
+                  ? Object.entries(item.specifications)
+                      .map(([k, v]) => (typeof v === 'string' ? v : ''))
+                      .filter(Boolean)
+                      .join(' • ')
+                  : '';
+
+                return (
+                  <tr key={item.id || idx}>
+                    <td className="py-3 pr-4">
+                      <span className="font-bold text-slate-900 block">{item.productName}</span>
+                      {specParts && (
+                        <span className="text-[11px] text-slate-500 block">
+                          {specParts}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 text-center font-mono text-slate-600">4911</td>
+                    <td className="py-3 text-right font-mono font-bold">{item.quantity} pcs</td>
+                    <td className="py-3 text-right font-mono">{formatCurrency(item.unitPrice)}</td>
+                    <td className="py-3 text-right font-mono font-bold">{formatCurrency(item.totalPrice)}</td>
+                  </tr>
+                );
+              })}
+
+              {/* SEPARATELY DISPLAYED COURIER & DELIVERY CHARGES ROW */}
+              <tr className="bg-slate-50/80 font-sans">
                 <td className="py-3 pr-4">
-                  <span className="font-bold text-slate-900 block">Premium Visiting Cards</span>
-                  <span className="text-[11px] text-slate-500">
-                    400 GSM Velvet Artboard • Matte Thermal Lamination • Spot UV Double Sided
+                  <div className="flex items-center gap-1.5">
+                    <Truck className="h-3.5 w-3.5 text-slate-700" />
+                    <span className="font-bold text-slate-900 block">
+                      Courier & Logistics Delivery Charges
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 block pl-5">
+                    Doorstep Express Delivery Service • Safe Handling & Packaging
                   </span>
                 </td>
-                <td className="py-3 text-center font-mono text-slate-600">4911</td>
-                <td className="py-3 text-right font-mono font-bold">500 pcs</td>
-                <td className="py-3 text-right font-mono">₹2.50</td>
-                <td className="py-3 text-right font-mono font-bold">₹1,250.00</td>
+                <td className="py-3 text-center font-mono text-slate-600 font-semibold">
+                  996812
+                </td>
+                <td className="py-3 text-right font-mono font-semibold">1 shipment</td>
+                <td className="py-3 text-right font-mono font-semibold">
+                  {shippingFee === 0 ? 'FREE' : formatCurrency(shippingFee)}
+                </td>
+                <td className="py-3 text-right font-mono font-bold text-slate-900">
+                  {shippingFee === 0 ? 'FREE (₹0.00)' : formatCurrency(shippingFee)}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -142,27 +245,54 @@ export default function InvoicePrintablePage({
         {/* Tax Summary Calculation */}
         <div className="py-6 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start gap-6 text-xs">
           <div className="space-y-1 max-w-sm text-[11px] text-slate-500">
-            <p className="font-bold text-slate-700">Payment Status: PAID ONLINE</p>
-            <p>Razorpay Gateway Ref: pay_NZ9981240182</p>
+            <p className="font-bold text-slate-700">Payment Status: {order?.paymentStatus || 'PAID ONLINE'}</p>
+            <p>Delivery Method: {order?.deliveryMethod || 'COURIER'}</p>
             <p>E-Way Bill: Not required (&lt; ₹50,000 threshold)</p>
           </div>
 
-          <div className="w-full sm:w-64 space-y-2">
+          <div className="w-full sm:w-72 space-y-2">
             <div className="flex justify-between text-slate-600">
-              <span>Taxable Value:</span>
-              <span className="font-mono font-bold text-slate-900">₹1,250.00</span>
+              <span>Print Goods Subtotal:</span>
+              <span className="font-mono font-bold text-slate-900">{formatCurrency(subtotal)}</span>
             </div>
+
+            {/* SEPARATE DELIVERY CHARGES LINE ITEM IN BREAKDOWN */}
+            <div className="flex justify-between text-slate-800 font-semibold py-1 border-t border-slate-100">
+              <span className="flex items-center gap-1">
+                <Truck className="h-3 w-3 text-slate-600" />
+                <span>Courier / Delivery Charges:</span>
+              </span>
+              <span className={`font-mono font-bold ${shippingFee === 0 ? 'text-emerald-700' : 'text-slate-900'}`}>
+                {shippingFee === 0 ? 'FREE (₹0.00)' : formatCurrency(shippingFee)}
+              </span>
+            </div>
+
             <div className="flex justify-between text-slate-600">
-              <span>CGST (9.0%):</span>
-              <span className="font-mono font-bold text-slate-900">₹112.50</span>
+              <span>Total Taxable Base:</span>
+              <span className="font-mono font-bold text-slate-900">{formatCurrency(subtotal + shippingFee)}</span>
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>SGST (9.0%):</span>
-              <span className="font-mono font-bold text-slate-900">₹112.50</span>
-            </div>
-            <div className="pt-2 border-t border-slate-900 flex justify-between font-black text-sm text-slate-900 font-display">
+
+            {igst > 0 ? (
+              <div className="flex justify-between text-slate-600">
+                <span>IGST (18.0%):</span>
+                <span className="font-mono font-bold text-slate-900">{formatCurrency(igst)}</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between text-slate-600">
+                  <span>CGST (9.0%):</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(cgst)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>SGST (9.0%):</span>
+                  <span className="font-mono font-bold text-slate-900">{formatCurrency(sgst)}</span>
+                </div>
+              </>
+            )}
+
+            <div className="pt-2 border-t-2 border-slate-900 flex justify-between font-black text-sm text-slate-900 font-display">
               <span>Total Invoice Value:</span>
-              <span>₹1,475.00</span>
+              <span>{formatCurrency(grandTotal)}</span>
             </div>
           </div>
         </div>
@@ -170,7 +300,7 @@ export default function InvoicePrintablePage({
         {/* Authorized Signature Footer */}
         <div className="pt-8 flex flex-col sm:flex-row items-end justify-between gap-6 text-xs">
           <div className="text-[10px] text-slate-400 font-mono">
-            This is a system-generated Master Tax Invoice. Strictly TypeScript Verified.
+            This is an official system-generated GST Tax Invoice with separated courier charges.
           </div>
           <div className="text-right">
             <div className="h-10 border-b border-slate-300 w-48 mb-1" />
