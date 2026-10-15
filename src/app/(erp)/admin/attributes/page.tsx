@@ -63,14 +63,11 @@ export default function AdminAttributesPage() {
   const [editingValIndex, setEditingValIndex] = useState<number | null>(null);
   const [valName, setValName] = useState('');
   const [includeImage, setIncludeImage] = useState(false);
-  const [valImageUrl, setValImageUrl] = useState('');
-  const [isUploadingValImg, setIsUploadingValImg] = useState(false);
   const [setFileCount, setSetFileCount] = useState(false);
   const [valFileCount, setValFileCount] = useState<number>(1);
   const [valFileSlotLabels, setValFileSlotLabels] = useState<string[]>(['']);
   const [valMinMegapixels, setValMinMegapixels] = useState<number>(1.5);
   const [valActive, setValActive] = useState(true);
-  const valFileInputRef = useRef<HTMLInputElement>(null);
 
   // Load all attributes from API
   const loadAttributes = async () => {
@@ -229,7 +226,6 @@ export default function AdminAttributesPage() {
     setEditingValIndex(null);
     setValName('');
     setIncludeImage(false);
-    setValImageUrl('');
     setSetFileCount(false);
     setValFileCount(1);
     setValFileSlotLabels(['']);
@@ -243,8 +239,7 @@ export default function AdminAttributesPage() {
     if (!opt) return;
     setEditingValIndex(idx);
     setValName(opt.label || '');
-    setIncludeImage(Boolean(opt.imageUrl));
-    setValImageUrl(opt.imageUrl || '');
+    setIncludeImage(Boolean(opt.includeImage || opt.imageUrl));
     const hasFiles = Boolean(opt.fileCount && opt.fileCount > 0);
     setSetFileCount(hasFiles);
     const count = opt.fileCount || 1;
@@ -279,20 +274,6 @@ export default function AdminAttributesPage() {
     });
   };
 
-  const handleValImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploadingValImg(true);
-    try {
-      const res = await api.uploadReferenceImage(file);
-      setValImageUrl(res.fileUrl);
-    } catch (err: any) {
-      alert(err?.message || 'Failed to upload image');
-    } finally {
-      setIsUploadingValImg(false);
-    }
-  };
-
   const handleSaveValueRow = async () => {
     if (!valuesModalAttr) return;
     if (!valName.trim()) {
@@ -313,10 +294,16 @@ export default function AdminAttributesPage() {
           ? modalOptions[editingValIndex].value
           : valueCode,
       isActive: valActive,
-      imageUrl: includeImage && valImageUrl ? valImageUrl : null,
-      fileCount: setFileCount ? Math.max(1, Math.floor(Number(valFileCount) || 1)) : null,
+      includeImage: includeImage,
+      fileCount: setFileCount
+        ? Math.max(1, Math.floor(Number(valFileCount) || 1))
+        : includeImage
+        ? 1
+        : null,
       fileSlotLabels: setFileCount
         ? valFileSlotLabels.map((s) => s.trim()).filter((s) => s.length > 0)
+        : includeImage
+        ? ['Image']
         : undefined,
       minMegapixels: setFileCount
         ? Number(valMinMegapixels) > 0
@@ -333,6 +320,9 @@ export default function AdminAttributesPage() {
         editingValIndex !== null
           ? modalOptions[editingValIndex]?.priceModifierType || 'FIXED'
           : 'FIXED',
+      isOptionalAddOn: Boolean(
+        valuesModalAttr.isOptionalAddOn || valuesModalAttr.options?.[0]?.isOptionalAddOn,
+      ),
     };
 
     let updatedList: ReusableAttributeOption[];
@@ -345,7 +335,12 @@ export default function AdminAttributesPage() {
     setIsSavingValues(true);
     setValuesModalError(null);
     try {
-      await api.adminUpdateAttribute(valuesModalAttr.id, { options: updatedList });
+      await api.adminUpdateAttribute(valuesModalAttr.id, {
+        options: updatedList,
+        isOptionalAddOn: Boolean(
+          valuesModalAttr.isOptionalAddOn || valuesModalAttr.options?.[0]?.isOptionalAddOn,
+        ),
+      });
       setModalOptions(updatedList);
       setValuesModalAttr({ ...valuesModalAttr, options: updatedList });
       resetValueForm();
@@ -360,6 +355,27 @@ export default function AdminAttributesPage() {
       setValuesModalError(err?.message || 'Failed to save attribute value.');
     } finally {
       setIsSavingValues(false);
+    }
+  };
+
+  const handleToggleOptionalAddOn = async (attr: ReusableAttribute) => {
+    const currentVal = Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn);
+    const newVal = !currentVal;
+    setActionLoadingId(attr.id);
+    try {
+      const updatedOptions = (attr.options || []).map((o) => ({
+        ...o,
+        isOptionalAddOn: newVal,
+      }));
+      await api.adminUpdateAttribute(attr.id, {
+        isOptionalAddOn: newVal,
+        options: updatedOptions,
+      });
+      await loadAttributes();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to update optional add-on status');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -530,7 +546,7 @@ export default function AdminAttributesPage() {
                   className="w-4 h-4 accent-[#0F172A] rounded border-slate-300"
                 />
                 <span className="text-xs font-medium text-slate-700">
-                  Optional add-on
+                  Optional add-on <span className="text-slate-400 font-normal">(Enables extra price option on /admin/products)</span>
                 </span>
               </label>
 
@@ -663,17 +679,36 @@ export default function AdminAttributesPage() {
                         </span>
                       </td>
 
-                      {/* Type & Add-on Badge */}
+                      {/* Type & Add-on Badge / Quick Toggle */}
                       <td className="py-3 px-4">
-                        <div className="flex flex-col gap-1 items-start">
+                        <div className="flex flex-col gap-1.5 items-start">
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200/80">
                             {typeLabel}
                           </span>
-                          {Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn) && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              Optional Add-on
+                          <button
+                            type="button"
+                            onClick={() => handleToggleOptionalAddOn(attr)}
+                            disabled={actionLoadingId === attr.id}
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all cursor-pointer border ${
+                              Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn)
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100 shadow-2xs'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                            }`}
+                            title="Click to toggle Optional Add-on (controls extra price option on /admin/products)"
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn)
+                                  ? 'bg-indigo-600'
+                                  : 'bg-slate-400'
+                              }`}
+                            />
+                            <span>
+                              {Boolean(attr.isOptionalAddOn || attr.options?.[0]?.isOptionalAddOn)
+                                ? 'Optional Add-on (Extra Price ON)'
+                                : 'Standard (No Extra Price)'}
                             </span>
-                          )}
+                          </button>
                         </div>
                       </td>
 
@@ -867,6 +902,22 @@ export default function AdminAttributesPage() {
                   </div>
                 </div>
 
+                {/* Linked guidance banner when includeImage is checked for Let us design */}
+                {includeImage &&
+                  valuesModalAttr &&
+                  (valuesModalAttr.name.toLowerCase().includes('design') ||
+                    valuesModalAttr.code.toLowerCase().includes('design')) && (
+                    <div className="p-3 rounded-xl bg-purple-50/80 border border-purple-200 text-xs text-purple-900 space-y-1 animate-in fade-in duration-150">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <Layers className="w-3.5 h-3.5 text-purple-700" />
+                        <span>Connected with Printing Location</span>
+                      </div>
+                      <p className="text-[11px] text-purple-700 leading-relaxed">
+                        Customer artwork upload is connected to <strong>Printing Location</strong>: Single Side requests 1 artwork upload; Double Side requests 2 artwork uploads (Front &amp; Back).
+                      </p>
+                    </div>
+                  )}
+
                 {/* Conditional Set File Count Box (Matching Screenshot Exactly) */}
                 {setFileCount && (
                   <div className="p-4 bg-slate-50/40 rounded-2xl border border-slate-200/90 space-y-3.5 animate-in fade-in duration-150">
@@ -949,60 +1000,6 @@ export default function AdminAttributesPage() {
                   </div>
                 )}
 
-                {/* Conditional Include Image Upload */}
-                {includeImage && (
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 animate-in fade-in duration-150">
-                    <span className="block text-xs font-semibold text-slate-800">
-                      Value Image / Preview
-                    </span>
-                    {valImageUrl ? (
-                      <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
-                        <div className="flex items-center gap-2.5">
-                          <img
-                            src={resolveImageUrl(valImageUrl)}
-                            alt="Preview"
-                            className="w-9 h-9 rounded object-cover border border-slate-200"
-                          />
-                          <span className="text-xs text-slate-600 truncate max-w-[200px]">
-                            Image configured
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setValImageUrl('')}
-                          className="text-xs text-red-600 hover:underline px-2 py-1"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          ref={valFileInputRef}
-                          onChange={handleValImageUpload}
-                          className="hidden"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => valFileInputRef.current?.click()}
-                          disabled={isUploadingValImg}
-                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>
-                            {isUploadingValImg ? 'Uploading...' : 'Choose Image File'}
-                          </span>
-                        </button>
-                        <span className="text-[11px] text-slate-400">
-                          PNG, JPG, WebP supported
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Big Yellow Button (as in reference screenshot) */}
                 <div className="flex items-center gap-2 pt-1">
                   <button
@@ -1045,7 +1042,7 @@ export default function AdminAttributesPage() {
                         opt.fileCount !== undefined &&
                         opt.fileCount !== null &&
                         Number(opt.fileCount) > 0;
-                      const hasImage = Boolean(opt.imageUrl);
+                      const hasCustomerImage = Boolean(opt.includeImage || opt.imageUrl);
 
                       return (
                         <div
@@ -1090,8 +1087,8 @@ export default function AdminAttributesPage() {
                             </div>
                           </div>
 
-                          {/* Card Footer Badges: File Count / Image (if configured) */}
-                          {(hasFileCount || hasImage) && (
+                          {/* Card Footer Badges: File Count / Customer Image (if configured) */}
+                          {(hasFileCount || hasCustomerImage) && (
                             <div className="flex flex-wrap items-center gap-1 pt-0.5">
                               {hasFileCount && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
@@ -1105,14 +1102,10 @@ export default function AdminAttributesPage() {
                                 </span>
                               )}
 
-                              {hasImage && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                  <img
-                                    src={resolveImageUrl(opt.imageUrl!)}
-                                    alt=""
-                                    className="w-3 h-3 rounded object-cover"
-                                  />
-                                  <span>Image</span>
+                              {hasCustomerImage && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                  <Upload className="w-2.5 h-2.5 shrink-0" />
+                                  <span>Customer Image</span>
                                 </span>
                               )}
                             </div>

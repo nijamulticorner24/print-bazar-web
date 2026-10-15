@@ -144,6 +144,8 @@ export const SingleTypePricingTable: React.FC<SingleTypePricingTableProps> = ({
 
     for (const attrId of Object.keys(selectedAttributes)) {
       const config = selectedAttributes[attrId];
+      // Only show extra price rows for attributes configured as Optional add-on
+      if (!config.isOptionalAddOn) continue;
       for (const val of config.enabledOptionValues) {
         rows.push({
           uniqueKey: `${config.code}:${val}`,
@@ -151,7 +153,7 @@ export const SingleTypePricingTable: React.FC<SingleTypePricingTableProps> = ({
           attributeCode: config.code,
           optionValue: val,
           optionLabel: getOptionLabel(config.code, val),
-          isAddOn: Boolean(config.isOptionalAddOn),
+          isAddOn: true,
         });
       }
     }
@@ -351,7 +353,7 @@ export const SingleTypePricingTable: React.FC<SingleTypePricingTableProps> = ({
           {attributeRows.length === 0 && (
             <div className="p-3 bg-slate-50/60 border-t border-slate-100 text-center text-[11px] text-slate-500">
               <RiInformationLine className="h-3.5 w-3.5 inline mr-1 text-slate-400" />
-              Attach reusable attributes in Section 2 above to configure additional attribute/add-on pricing for each range.
+              Only attributes checked as "Optional add-on" display extra price rows here. Standard variation pricing is determined by the Base price row.
             </div>
           )}
         </div>

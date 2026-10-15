@@ -107,32 +107,17 @@ export default function AdminShippingGstPage() {
   const [zoneToDelete, setZoneToDelete] = useState<ShippingZone | null>(null);
   const [isDeletingZone, setIsDeletingZone] = useState(false);
 
-  // Product-Level Courier Configuration State
+  // Category-Level Courier Configuration State
   const [productShippingList, setProductShippingList] = useState<ProductShippingItem[]>([]);
-  const [productSearchQuery, setProductSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [categorySearchQuery, setCategorySearchQuery] = useState('');
 
-  // Editing Single Product Modal
-  const [editingProduct, setEditingProduct] = useState<ProductShippingItem | null>(null);
-  const [prodShippingType, setProdShippingType] = useState<'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED'>('DEFAULT');
-  const [prodUnitWeight, setProdUnitWeight] = useState<number | ''>(2.5);
-  const [prodCourierCharge, setProdCourierCharge] = useState<number | ''>(100);
-  const [prodQtyStepRate, setProdQtyStepRate] = useState<number | ''>(25);
-  const [prodFreeThreshold, setProdFreeThreshold] = useState<number | ''>(1000);
-  const [prodQuantitySlabs, setProdQuantitySlabs] = useState<QuantityCourierSlab[]>([]);
-  const [applyToEntireCategory, setApplyToEntireCategory] = useState(false);
-  const [isSavingProductSettings, setIsSavingProductSettings] = useState(false);
-  const [productModalError, setProductModalError] = useState<string | null>(null);
-
-  // Batch Category Courier Modal State
+  // Category Courier Modal State
   const [isBatchCategoryModalOpen, setIsBatchCategoryModalOpen] = useState(false);
   const [batchTargetCategoryId, setBatchTargetCategoryId] = useState('');
-  const [batchShippingType, setBatchShippingType] = useState<'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED'>('QUANTITY_BASED');
-  const [batchUnitWeight, setBatchUnitWeight] = useState<number | ''>(2.5);
+  const [batchShippingType, setBatchShippingType] = useState<
+    'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED'
+  >('DEFAULT');
   const [batchCourierCharge, setBatchCourierCharge] = useState<number | ''>(100);
-  const [batchQtyStepRate, setBatchQtyStepRate] = useState<number | ''>(25);
-  const [batchFreeThreshold, setBatchFreeThreshold] = useState<number | ''>(1000);
   const [batchQuantitySlabs, setBatchQuantitySlabs] = useState<QuantityCourierSlab[]>([
     { minQty: 100, charge: 50 },
     { minQty: 250, charge: 80 },
@@ -344,21 +329,60 @@ export default function AdminShippingGstPage() {
     }
   };
 
-  // Distinct Categories list
-  const distinctCategories = useMemo(() => {
-    const map = new Map<string, string>();
+  // Aggregated Category-Level Courier List
+  const categoryShippingList = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        productCount: number;
+        shippingChargeType: 'DEFAULT' | 'FIXED' | 'FREE' | 'QUANTITY_BASED' | 'WEIGHT_BASED';
+        courierCharge: number;
+        quantityCourierSlabs: QuantityCourierSlab[];
+      }
+    >();
+
     for (const p of productShippingList) {
-      if (p.categoryId) {
-        map.set(p.categoryId, p.categoryName || 'General');
+      const catId = p.categoryId || 'uncategorized';
+      const catName = p.categoryName || 'General';
+      const existing = map.get(catId);
+      if (!existing) {
+        map.set(catId, {
+          id: catId,
+          name: catName,
+          productCount: 1,
+          shippingChargeType: p.shippingChargeType || 'DEFAULT',
+          courierCharge: p.courierCharge || 0,
+          quantityCourierSlabs: p.quantityCourierSlabs || [],
+        });
+      } else {
+        existing.productCount += 1;
+        if (
+          existing.shippingChargeType === 'DEFAULT' &&
+          p.shippingChargeType &&
+          p.shippingChargeType !== 'DEFAULT'
+        ) {
+          existing.shippingChargeType = p.shippingChargeType;
+          existing.courierCharge = p.courierCharge || 0;
+          existing.quantityCourierSlabs = p.quantityCourierSlabs || [];
+        }
       }
     }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [productShippingList]);
 
+  // Filtered categories
+  const filteredCategories = useMemo(() => {
+    if (!categorySearchQuery.trim()) return categoryShippingList;
+    const q = categorySearchQuery.toLowerCase();
+    return categoryShippingList.filter((cat) => cat.name.toLowerCase().includes(q));
+  }, [categoryShippingList, categorySearchQuery]);
+
   // Quantity Slab manipulation helpers
-  const handleAddSlab = (target: 'single' | 'batch') => {
-    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
-    setter((prev) => {
+  const handleAddSlab = () => {
+    setBatchQuantitySlabs((prev) => {
       const last = prev[prev.length - 1];
       const nextMin = last ? (last.maxQty ? last.maxQty + 1 : last.minQty + 250) : 100;
       const nextCharge = last ? Math.round(last.charge * 1.5) : 50;
@@ -366,138 +390,103 @@ export default function AdminShippingGstPage() {
     });
   };
 
-  const handleRemoveSlab = (idx: number, target: 'single' | 'batch') => {
-    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
-    setter((prev) => prev.filter((_, i) => i !== idx));
+  const handleRemoveSlab = (idx: number) => {
+    setBatchQuantitySlabs((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleUpdateSlab = (
     idx: number,
     field: keyof QuantityCourierSlab,
     val: any,
-    target: 'single' | 'batch',
   ) => {
-    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
-    setter((prev) =>
+    setBatchQuantitySlabs((prev) =>
       prev.map((s, i) => (i === idx ? { ...s, [field]: val } : s)),
     );
   };
 
-  const handleAddQuickPreset = (minQty: number, charge: number, target: 'single' | 'batch') => {
-    const setter = target === 'single' ? setProdQuantitySlabs : setBatchQuantitySlabs;
-    setter((prev) => {
+  const handleAddQuickPreset = (minQty: number, charge: number) => {
+    setBatchQuantitySlabs((prev) => {
       if (prev.some((s) => s.minQty === minQty)) return prev;
       return [...prev, { minQty, charge }].sort((a, b) => a.minQty - b.minQty);
     });
   };
 
-  // Open Product Courier Edit Modal
-  const handleOpenEditProductShipping = (p: ProductShippingItem) => {
-    setEditingProduct(p);
-    setProdShippingType(p.shippingChargeType || 'DEFAULT');
-    setProdUnitWeight(p.unitWeightGrams || 2.5);
-    setProdCourierCharge(p.courierCharge || 100);
-    setProdQtyStepRate(p.perAdditionalQtyRate || 25);
-    setProdFreeThreshold(p.freeShippingThreshold || 1000);
-    setProdQuantitySlabs(
-      p.quantityCourierSlabs && p.quantityCourierSlabs.length > 0
-        ? p.quantityCourierSlabs.map((s) => ({ ...s }))
+  // Open Category Courier Configure Modal
+  const handleOpenConfigureCategory = (cat: typeof categoryShippingList[0]) => {
+    setBatchTargetCategoryId(cat.id === 'uncategorized' ? '' : cat.id);
+    setBatchShippingType(
+      cat.shippingChargeType === 'DEFAULT' ? 'QUANTITY_BASED' : cat.shippingChargeType,
+    );
+    setBatchCourierCharge(cat.courierCharge || 100);
+    setBatchQuantitySlabs(
+      cat.quantityCourierSlabs && cat.quantityCourierSlabs.length > 0
+        ? cat.quantityCourierSlabs.map((s) => ({ ...s }))
         : [
             { minQty: 100, charge: 50 },
             { minQty: 250, charge: 80 },
             { minQty: 500, charge: 120 },
+            { minQty: 1000, charge: 200 },
           ],
     );
-    setApplyToEntireCategory(false);
-    setProductModalError(null);
+    setBatchModalError(null);
+    setIsBatchCategoryModalOpen(true);
   };
 
-  // Save Single Product Courier Settings (with optional Category Apply)
-  const handleSaveProductShipping = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProduct) return;
-    setProductModalError(null);
-    setIsSavingProductSettings(true);
+  // Reset Category back to Global Default Policy
+  const handleResetCategoryToDefault = async (cat: typeof categoryShippingList[0]) => {
+    if (cat.id === 'uncategorized') return;
+    if (
+      !confirm(
+        `Reset all products in "${cat.name}" category to inherit the Global Store Courier Policy?`,
+      )
+    )
+      return;
 
     try {
-      const payload = {
-        shippingChargeType: prodShippingType,
-        unitWeightGrams: Number(prodUnitWeight) || 0,
-        courierCharge: Number(prodCourierCharge) || 0,
-        perAdditionalQtyRate: Number(prodQtyStepRate) || 0,
-        freeShippingThreshold: Number(prodFreeThreshold) || 0,
-        quantityCourierSlabs: prodQuantitySlabs,
-      };
+      await api.batchUpdateCategoryShippingSettings({
+        categoryId: cat.id,
+        shippingChargeType: 'DEFAULT',
+        courierCharge: 0,
+        quantityCourierSlabs: [],
+      });
 
-      if (applyToEntireCategory && editingProduct.categoryId) {
-        const res = await api.batchUpdateCategoryShippingSettings({
-          categoryId: editingProduct.categoryId,
-          ...payload,
-        });
-
-        setProductShippingList((prev) =>
-          prev.map((item) =>
-            item.categoryId === editingProduct.categoryId
-              ? {
-                  ...item,
-                  ...payload,
-                }
-              : item,
-          ),
-        );
-
-        setEditingProduct(null);
-        setSettingsSuccess(
-          `Courier settings & quantity slabs applied to all products in category '${editingProduct.categoryName}'. (${res.updatedCount} products synchronized)`,
-        );
-      } else {
-        await api.updateProductShippingSettings(editingProduct.id, payload);
-
-        setProductShippingList((prev) =>
-          prev.map((item) =>
-            item.id === editingProduct.id
-              ? {
-                  ...item,
-                  ...payload,
-                }
-              : item,
-          ),
-        );
-
-        setEditingProduct(null);
-        setSettingsSuccess(`Courier settings for '${editingProduct.name}' updated successfully.`);
-      }
+      setProductShippingList((prev) =>
+        prev.map((item) =>
+          item.categoryId === cat.id
+            ? {
+                ...item,
+                shippingChargeType: 'DEFAULT',
+                courierCharge: 0,
+                quantityCourierSlabs: [],
+              }
+            : item,
+        ),
+      );
+      setSettingsSuccess(`Category "${cat.name}" reset to Global Default Courier Policy.`);
       setTimeout(() => setSettingsSuccess(null), 4000);
     } catch (err: any) {
-      setProductModalError(err?.message || 'Failed to save product shipping settings.');
-    } finally {
-      setIsSavingProductSettings(false);
+      alert(err?.message || 'Failed to reset category courier settings.');
     }
   };
 
-  // Batch Category Courier Settings Save
+  // Category Courier Settings Save
   const handleSaveBatchCategoryShipping = async (e: React.FormEvent) => {
     e.preventDefault();
     setBatchModalError(null);
 
-    const targetCategory = distinctCategories.find((c) => c.id === batchTargetCategoryId);
-    if (!batchTargetCategoryId && selectedProductIds.length === 0) {
-      setBatchModalError('Please select a target category or at least one product.');
+    if (!batchTargetCategoryId) {
+      setBatchModalError('Please select a target category.');
       return;
     }
 
+    const targetCategory = categoryShippingList.find((c) => c.id === batchTargetCategoryId);
+
     setIsSavingBatchCategory(true);
     try {
-      const isProductSelectionMode = selectedProductIds.length > 0 && !batchTargetCategoryId;
       const payload = {
-        ...(isProductSelectionMode
-          ? { productIds: selectedProductIds }
-          : { categoryId: batchTargetCategoryId }),
+        categoryId: batchTargetCategoryId,
         shippingChargeType: batchShippingType,
-        unitWeightGrams: Number(batchUnitWeight) || 0,
         courierCharge: Number(batchCourierCharge) || 0,
-        perAdditionalQtyRate: Number(batchQtyStepRate) || 0,
-        freeShippingThreshold: Number(batchFreeThreshold) || 0,
         quantityCourierSlabs: batchQuantitySlabs,
       };
 
@@ -505,17 +494,11 @@ export default function AdminShippingGstPage() {
 
       setProductShippingList((prev) =>
         prev.map((item) => {
-          const isTarget = isProductSelectionMode
-            ? selectedProductIds.includes(item.id)
-            : item.categoryId === batchTargetCategoryId;
-          if (isTarget) {
+          if (item.categoryId === batchTargetCategoryId) {
             return {
               ...item,
               shippingChargeType: batchShippingType,
-              unitWeightGrams: Number(batchUnitWeight) || 0,
               courierCharge: Number(batchCourierCharge) || 0,
-              perAdditionalQtyRate: Number(batchQtyStepRate) || 0,
-              freeShippingThreshold: Number(batchFreeThreshold) || 0,
               quantityCourierSlabs: batchQuantitySlabs,
             };
           }
@@ -524,25 +507,17 @@ export default function AdminShippingGstPage() {
       );
 
       setIsBatchCategoryModalOpen(false);
-      setSelectedProductIds([]);
       setSettingsSuccess(
-        `Batch courier settings applied successfully to ${res.updatedCount} product(s)${
-          targetCategory ? ` in '${targetCategory.name}'` : ''
-        }.`,
+        `Courier rules successfully applied to category '${
+          targetCategory?.name || batchTargetCategoryId
+        }' (${res.updatedCount} products updated).`,
       );
       setTimeout(() => setSettingsSuccess(null), 4000);
     } catch (err: any) {
-      setBatchModalError(err?.message || 'Failed to batch update category courier settings.');
+      setBatchModalError(err?.message || 'Failed to update category courier settings.');
     } finally {
       setIsSavingBatchCategory(false);
     }
-  };
-
-  // Multi-select helpers
-  const handleToggleSelectProduct = (id: string) => {
-    setSelectedProductIds((prev) =>
-      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id],
-    );
   };
 
   // Run Live Calculator Simulation
@@ -581,22 +556,6 @@ export default function AdminShippingGstPage() {
     );
   });
 
-  // Filtered Products List
-  const filteredProducts = productShippingList.filter((p) => {
-    if (categoryFilter !== 'ALL') {
-      if (p.categoryId && p.categoryId !== categoryFilter && p.categoryName !== categoryFilter) {
-        return false;
-      }
-    }
-    if (!productSearchQuery.trim()) return true;
-    const q = productSearchQuery.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.sku.toLowerCase().includes(q) ||
-      p.categoryName.toLowerCase().includes(q)
-    );
-  });
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* 1. Header Bar */}
@@ -611,7 +570,7 @@ export default function AdminShippingGstPage() {
             Courier & Delivery Charges Configuration
           </h1>
           <p className="text-[13px] sm:text-[14px] text-slate-500 leading-normal mt-0.5">
-            Configure quantity-wise, weight-wise, and location-based courier charges alongside product-level settings.
+            Configure baseline delivery rates, GST tax rules, and location-based courier charges alongside product-level settings.
           </p>
         </div>
 
@@ -686,10 +645,10 @@ export default function AdminShippingGstPage() {
               : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
           }`}
         >
-          <Package className="h-4 w-4" />
-          <span>Product Configuration Rules</span>
+          <Layers className="h-4 w-4" />
+          <span>Category Courier Rules</span>
           <span className="px-1.5 py-0.2 rounded-full bg-slate-100 text-[10px] font-mono text-slate-600">
-            {productShippingList.length}
+            {categoryShippingList.length}
           </span>
         </button>
 
@@ -711,10 +670,9 @@ export default function AdminShippingGstPage() {
       {/* TAB 1: GLOBAL COURIER & GST RULES */}
       {/* ============================================================ */}
       {activeTab === 'global' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Core Baseline Parameters */}
-            <div className="lg:col-span-6 bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
+        <div className="space-y-6 max-w-3xl">
+          {/* Core Baseline Parameters */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-slate-100 text-slate-800 flex items-center justify-center font-bold text-xs border border-slate-200">
@@ -832,144 +790,6 @@ export default function AdminShippingGstPage() {
                 </div>
               </div>
             </div>
-
-            {/* Weight-Wise and Quantity-Wise Configuration */}
-            <div className="lg:col-span-6 space-y-6">
-              {/* Weight-Wise Card */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold text-xs border border-indigo-200">
-                      <Scale className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
-                        Weight-Wise Courier Surcharges
-                      </h2>
-                      <p className="text-[12px] text-slate-500">
-                        Adjust charges for heavier shipments based on total carton weight.
-                      </p>
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={enableWeightCharges}
-                      onChange={(e) => setEnableWeightCharges(e.target.checked)}
-                      className="h-4 w-4 text-slate-900 rounded border-slate-300"
-                    />
-                    <span className="text-xs font-bold text-slate-700">Active</span>
-                  </label>
-                </div>
-
-                <div className={`grid grid-cols-2 gap-4 ${!enableWeightCharges ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <div>
-                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
-                      Base Included Weight (Kg)
-                    </label>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={baseWeightKg}
-                      onChange={(e) => setBaseWeightKg(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                      placeholder="e.g. 1.0"
-                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-                    />
-                    <span className="text-[11px] text-slate-400 mt-0.5 block">Weight covered in base rate</span>
-                  </div>
-
-                  <div>
-                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
-                      Extra Rate Per Additional Kg (₹)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs font-semibold">
-                        ₹
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={weightRatePerKg}
-                        onChange={(e) => setWeightRatePerKg(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                        placeholder="e.g. 50"
-                        className="w-full h-9 pl-6 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-                      />
-                    </div>
-                    <span className="text-[11px] text-slate-400 mt-0.5 block">Surcharge per incremental kg</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quantity-Wise Card */}
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold text-xs border border-amber-200">
-                      <Layers className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">
-                        Quantity-Wise Delivery Surcharges
-                      </h2>
-                      <p className="text-[12px] text-slate-500">
-                        Scale courier charges when commercial print volume exceeds standard pack count.
-                      </p>
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={enableQuantityCharges}
-                      onChange={(e) => setEnableQuantityCharges(e.target.checked)}
-                      className="h-4 w-4 text-slate-900 rounded border-slate-300"
-                    />
-                    <span className="text-xs font-bold text-slate-700">Active</span>
-                  </label>
-                </div>
-
-                <div className={`grid grid-cols-2 gap-4 ${!enableQuantityCharges ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <div>
-                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
-                      Quantity Surcharge Step (Units)
-                    </label>
-                    <input
-                      type="number"
-                      min="10"
-                      step="10"
-                      value={quantityStep}
-                      onChange={(e) => setQuantityStep(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                      placeholder="e.g. 500"
-                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-                    />
-                    <span className="text-[11px] text-slate-400 mt-0.5 block">Standard volume unit step</span>
-                  </div>
-
-                  <div>
-                    <label className="text-[12px] font-semibold text-slate-800 block mb-1">
-                      Surcharge Per Additional Step (₹)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs font-semibold">
-                        ₹
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={quantitySurchargePerStep}
-                        onChange={(e) => setQuantitySurchargePerStep(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                        placeholder="e.g. 30"
-                        className="w-full h-9 pl-6 pr-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-                      />
-                    </div>
-                    <span className="text-[11px] text-slate-400 mt-0.5 block">Extra charge per {quantityStep || 500} pcs</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
@@ -1151,252 +971,169 @@ export default function AdminShippingGstPage() {
       )}
 
       {/* ============================================================ */}
-      {/* TAB 3: PRODUCT CONFIGURATION COURIER RULES */}
+      {/* TAB 3: CATEGORY COURIER CONFIGURATION RULES */}
       {/* ============================================================ */}
       {activeTab === 'products' && (
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                <span>Product-Level Courier Configurations</span>
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold">
-                  Alongside Catalogue Items
+                <span>Category Courier Rules</span>
+                <span className="text-xs font-mono px-2 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 font-bold">
+                  Configured by Category
                 </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Set item-specific courier charge rules (Fixed, Free, Weight-Based, Quantity-Based) and unit weights across your catalogue.
+                Courier rules and quantity slabs are configured per category. All products in a category inherit these delivery settings.
               </p>
             </div>
 
             {/* Filter and Action Controls */}
             <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Category Filter */}
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
-                className="h-9 px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-slate-900 font-medium"
-              >
-                <option value="ALL">All Categories ({distinctCategories.length})</option>
-                {distinctCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-
               {/* Search Bar */}
-              <div className="relative w-48 sm:w-56">
+              <div className="relative w-56 sm:w-64">
                 <RiSearch2Line className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  value={productSearchQuery}
-                  onChange={(e) => setProductSearchQuery(e.target.value)}
-                  placeholder="Search products..."
+                  value={categorySearchQuery}
+                  onChange={(e) => setCategorySearchQuery(e.target.value)}
+                  placeholder="Search categories..."
                   className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 focus:bg-white"
                 />
               </div>
 
-              {/* Batch Category Courier Button */}
+              {/* Configure Category Courier Button */}
               <Button
                 type="button"
                 variant="primary"
                 size="sm"
                 onClick={() => {
-                  setBatchTargetCategoryId(
-                    categoryFilter !== 'ALL'
-                      ? categoryFilter
-                      : (distinctCategories[0]?.id || ''),
-                  );
-                  setIsBatchCategoryModalOpen(true);
+                  if (categoryShippingList.length > 0) {
+                    handleOpenConfigureCategory(categoryShippingList[0]);
+                  }
                 }}
                 className="h-9 px-3 gap-1.5 font-bold shadow-xs text-xs"
               >
                 <RiStackLine className="h-4 w-4" />
-                <span>Batch Category Courier</span>
+                <span>Configure Category</span>
               </Button>
             </div>
           </div>
 
-          {/* Bulk Selection Ribbon */}
-          {selectedProductIds.length > 0 && (
-            <div className="flex items-center justify-between p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-950 font-medium animate-in fade-in">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-purple-600 animate-pulse" />
-                <span>
-                  <strong>{selectedProductIds.length}</strong> product{selectedProductIds.length === 1 ? '' : 's'} selected for bulk configuration.
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSelectedProductIds([])}
-                  className="px-2.5 py-1 text-[11px] text-purple-700 hover:text-purple-900 font-semibold"
-                >
-                  Clear Selection
-                </button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    setBatchTargetCategoryId('');
-                    setIsBatchCategoryModalOpen(true);
-                  }}
-                  className="h-7 text-xs font-bold gap-1 bg-purple-700 hover:bg-purple-800 text-white"
-                >
-                  <RiEditLine className="h-3.5 w-3.5" />
-                  <span>Configure Selected Products</span>
-                </Button>
-              </div>
-            </div>
-          )}
-
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-left text-xs min-w-[750px]">
+            <table className="w-full text-left text-xs min-w-[700px]">
               <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-mono font-semibold">
                 <tr>
-                  <th className="py-3 px-3 w-10 text-center">
-                    <input
-                      type="checkbox"
-                      checked={
-                        filteredProducts.length > 0 &&
-                        selectedProductIds.length === filteredProducts.length
-                      }
-                      onChange={() => {
-                        if (selectedProductIds.length === filteredProducts.length) {
-                          setSelectedProductIds([]);
-                        } else {
-                          setSelectedProductIds(filteredProducts.map((p) => p.id));
-                        }
-                      }}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                    />
-                  </th>
-                  <th className="py-3 px-4">Product Name & SKU</th>
-                  <th className="py-3 px-4">Category</th>
+                  <th className="py-3 px-4">Category Name</th>
+                  <th className="py-3 px-4">Products</th>
                   <th className="py-3 px-4">Courier Mode</th>
-                  <th className="py-3 px-4">Unit Weight</th>
                   <th className="py-3 px-4">Custom Fee / Quantity Slabs</th>
-                  <th className="py-3 px-4 text-right">Configure</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {productShippingList.length === 0 ? (
+                {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400 font-mono text-xs">
-                      Loading catalogue products...
+                    <td colSpan={5} className="py-12 text-center text-slate-400 font-mono text-xs">
+                      Loading categories...
                     </td>
                   </tr>
-                ) : filteredProducts.length === 0 ? (
+                ) : filteredCategories.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-500 text-xs">
-                      No products match your search/category filter.
+                    <td colSpan={5} className="py-10 text-center text-slate-500 text-xs">
+                      No categories found matching your search.
                     </td>
                   </tr>
                 ) : (
-                  filteredProducts.map((p) => {
-                    const isSelected = selectedProductIds.includes(p.id);
-                    const slabs = p.quantityCourierSlabs || [];
+                  filteredCategories.map((cat) => {
+                    const slabs = cat.quantityCourierSlabs || [];
 
                     return (
-                      <tr
-                        key={p.id}
-                        className={`hover:bg-slate-50/40 transition-colors ${
-                          isSelected ? 'bg-purple-50/30' : ''
-                        }`}
-                      >
-                        <td className="py-3 px-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelectProduct(p.id)}
-                            className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                          />
-                        </td>
-
+                      <tr key={cat.id} className="hover:bg-slate-50/40 transition-colors">
                         <td className="py-3 px-4 font-semibold text-slate-900">
                           <div className="flex items-center gap-2">
-                            <Package className="h-4 w-4 text-slate-400 shrink-0" />
-                            <div>
-                              <span className="block font-bold">{p.name}</span>
-                              <span className="block font-mono text-[10px] text-slate-400">
-                                {p.sku}
-                              </span>
-                            </div>
+                            <Layers className="h-4 w-4 text-purple-600 shrink-0" />
+                            <span className="font-bold text-sm text-slate-900">{cat.name}</span>
                           </div>
                         </td>
 
                         <td className="py-3 px-4 text-slate-600 font-medium">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">
-                            {p.categoryName}
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
+                            {cat.productCount} product{cat.productCount === 1 ? '' : 's'}
                           </span>
                         </td>
 
                         <td className="py-3 px-4">
                           <span
                             className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
-                              p.shippingChargeType === 'FREE'
+                              cat.shippingChargeType === 'FREE'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : p.shippingChargeType === 'FIXED'
+                                : cat.shippingChargeType === 'FIXED'
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : p.shippingChargeType === 'WEIGHT_BASED'
-                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                : p.shippingChargeType === 'QUANTITY_BASED'
+                                : cat.shippingChargeType === 'QUANTITY_BASED'
                                 ? 'bg-purple-50 text-purple-700 border border-purple-200'
                                 : 'bg-slate-100 text-slate-700 border border-slate-200'
                             }`}
                           >
-                            {p.shippingChargeType || 'DEFAULT'}
+                            {cat.shippingChargeType || 'DEFAULT'}
                           </span>
                         </td>
 
-                        <td className="py-3 px-4 font-mono font-medium text-slate-800">
-                          {p.unitWeightGrams ? `${p.unitWeightGrams} g/pc` : '2.5 g (default)'}
-                        </td>
-
                         <td className="py-3 px-4 font-mono text-slate-900">
-                          {p.shippingChargeType === 'FREE' ? (
-                            <span className="text-emerald-700 font-bold">₹0 (Free)</span>
-                          ) : p.shippingChargeType === 'FIXED' ? (
-                            <span className="font-bold">{formatCurrency(p.courierCharge || 100)}</span>
-                          ) : p.shippingChargeType === 'QUANTITY_BASED' ? (
+                          {cat.shippingChargeType === 'FREE' ? (
+                            <span className="text-emerald-700 font-bold">₹0 (Free Delivery)</span>
+                          ) : cat.shippingChargeType === 'FIXED' ? (
+                            <span className="font-bold">{formatCurrency(cat.courierCharge || 100)}</span>
+                          ) : cat.shippingChargeType === 'QUANTITY_BASED' ? (
                             slabs.length > 0 ? (
                               <div className="flex flex-wrap gap-1 items-center">
-                                {slabs.slice(0, 3).map((slab, i) => (
+                                {slabs.slice(0, 4).map((slab, i) => (
                                   <span
                                     key={i}
                                     className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-50 text-purple-800 border border-purple-200"
                                   >
-                                    {slab.minQty} qty: ₹{slab.charge}
+                                    {slab.minQty} pcs: ₹{slab.charge}
                                   </span>
                                 ))}
-                                {slabs.length > 3 && (
+                                {slabs.length > 4 && (
                                   <span className="text-[10px] text-purple-600 font-mono font-semibold">
-                                    +{slabs.length - 3} more
+                                    +{slabs.length - 4} more
                                   </span>
                                 )}
                               </div>
                             ) : (
-                              <span className="font-bold text-purple-900">
-                                +₹{p.perAdditionalQtyRate || 25} / step
+                              <span className="text-amber-700 font-medium text-xs">
+                                No slabs configured
                               </span>
                             )
                           ) : (
-                            <span className="text-slate-400 font-normal">Inherits Global Policy</span>
+                            <span className="text-slate-400 font-normal">Inherits Global Store Policy</span>
                           )}
                         </td>
 
                         <td className="py-3 px-4 text-right">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenEditProductShipping(p)}
-                            className="text-xs gap-1 font-semibold"
-                          >
-                            <RiEditLine className="h-3.5 w-3.5" />
-                            <span>Settings</span>
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenConfigureCategory(cat)}
+                              className="text-xs gap-1 font-semibold hover:border-purple-300 hover:text-purple-700"
+                            >
+                              <RiEditLine className="h-3.5 w-3.5" />
+                              <span>Configure</span>
+                            </Button>
+                            {cat.shippingChargeType !== 'DEFAULT' && (
+                              <button
+                                type="button"
+                                onClick={() => handleResetCategoryToDefault(cat)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition-colors"
+                                title="Reset to Global Default Policy"
+                              >
+                                <RiDeleteBinLine className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1692,108 +1429,104 @@ export default function AdminShippingGstPage() {
       </Modal>
 
       {/* ============================================================ */}
-      {/* EDIT PRODUCT COURIER MODAL */}
+      {/* CATEGORY COURIER CONFIGURATION MODAL */}
       {/* ============================================================ */}
       <Modal
-        isOpen={!!editingProduct}
-        onClose={() => setEditingProduct(null)}
-        title={`Courier Settings: ${editingProduct?.name || ''}`}
-        maxWidth="md"
+        isOpen={isBatchCategoryModalOpen}
+        onClose={() => setIsBatchCategoryModalOpen(false)}
+        title="Configure Category Courier Rules"
+        maxWidth="2xl"
       >
-        <form onSubmit={handleSaveProductShipping} className="space-y-4 pt-2">
-          {productModalError && (
+        <form onSubmit={handleSaveBatchCategoryShipping} className="space-y-4 pt-2">
+          {batchModalError && (
             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
               <RiAlertLine className="h-4 w-4 shrink-0 text-rose-600" />
-              <span>{productModalError}</span>
+              <span>{batchModalError}</span>
             </div>
           )}
 
-          <div>
-            <label className="text-xs font-semibold text-slate-800 block mb-1">
-              Courier Calculation Mode
-            </label>
-            <select
-              value={prodShippingType}
-              onChange={(e) => setProdShippingType(e.target.value as any)}
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
-            >
-              <option value="DEFAULT">DEFAULT (Inherit Store Global Policy)</option>
-              <option value="FIXED">FIXED (Custom Flat Courier Fee)</option>
-              <option value="FREE">FREE (Always Free Delivery)</option>
-              <option value="QUANTITY_BASED">QUANTITY_BASED (Scaled by Pack Quantity)</option>
-              <option value="WEIGHT_BASED">WEIGHT_BASED (Scaled by Total Grams/Kg)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-slate-800 block mb-1">
-              Unit Weight Per Piece (Grams)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={prodUnitWeight}
-              onChange={(e) => setProdUnitWeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
-              placeholder="e.g. 2.5 for visiting card, 40 for brochure"
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-            />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Used to calculate order package weight automatically (500 cards @ 2.5g = 1.25 kg).
-            </p>
-          </div>
-
-          {prodShippingType === 'FIXED' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Target Category Selection */}
             <div>
               <label className="text-xs font-semibold text-slate-800 block mb-1">
-                Custom Courier Fee (₹)
+                Target Category <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={batchTargetCategoryId}
+                onChange={(e) => setBatchTargetCategoryId(e.target.value)}
+                required
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
+              >
+                <option value="">-- Choose Category to Configure --</option>
+                {categoryShippingList.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.productCount} products)
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Applied to all products in this category.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Courier Calculation Mode
+              </label>
+              <select
+                value={batchShippingType}
+                onChange={(e) => setBatchShippingType(e.target.value as any)}
+                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
+              >
+                <option value="QUANTITY_BASED">QUANTITY_BASED (Multiple Quantity Slabs)</option>
+                <option value="DEFAULT">DEFAULT (Store Global Policy)</option>
+                <option value="FIXED">FIXED (Flat Rate Per Order)</option>
+                <option value="FREE">FREE (Always Free Delivery)</option>
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Select delivery pricing policy.
+              </p>
+            </div>
+          </div>
+
+          {batchShippingType === 'FIXED' && (
+            <div>
+              <label className="text-xs font-semibold text-slate-800 block mb-1">
+                Flat Courier Fee (₹)
               </label>
               <input
                 type="number"
                 min="0"
                 step="any"
-                value={prodCourierCharge}
-                onChange={(e) => setProdCourierCharge(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                value={batchCourierCharge}
+                onChange={(e) =>
+                  setBatchCourierCharge(e.target.value === '' ? '' : parseFloat(e.target.value))
+                }
                 placeholder="e.g. 100"
                 className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
               />
             </div>
           )}
 
-          {prodShippingType === 'QUANTITY_BASED' && (
+          {batchShippingType === 'QUANTITY_BASED' && (
             <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-800 block mb-1">
-                  Additional Surcharge Per Quantity Step (₹)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={prodQtyStepRate}
-                  onChange={(e) => setProdQtyStepRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  placeholder="e.g. 25"
-                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
-                />
-              </div>
-
-              {/* Dynamic Quantity Slabs (e.g. 100 qty = ₹50) */}
-              <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200/80 space-y-2.5">
+              {/* Multiple Quantity Slabs */}
+              <div className="p-3.5 bg-purple-50/70 rounded-xl border border-purple-200 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
                       <RiStackLine className="h-4 w-4 text-purple-600" />
-                      <span>Multiple Quantity Slabs (e.g. 100 qty = ₹50)</span>
+                      <span>Category Quantity Slabs (e.g. 100 pcs = ₹50)</span>
                     </span>
                     <span className="text-[11px] text-purple-700 block">
-                      Configure custom courier milestones for this product.
+                      These milestones will be assigned to all products in this category.
                     </span>
                   </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => handleAddSlab('single')}
+                    onClick={handleAddSlab}
                     className="h-7 text-[11px] px-2 bg-white text-purple-800 border-purple-300 font-bold hover:bg-purple-50"
                   >
                     <Plus className="h-3 w-3 mr-1" />
@@ -1808,28 +1541,28 @@ export default function AdminShippingGstPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => handleAddQuickPreset(100, 50, 'single')}
+                    onClick={() => handleAddQuickPreset(100, 50)}
                     className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
                   >
                     + 100 qty (₹50)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAddQuickPreset(250, 80, 'single')}
+                    onClick={() => handleAddQuickPreset(250, 80)}
                     className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
                   >
                     + 250 qty (₹80)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAddQuickPreset(500, 120, 'single')}
+                    onClick={() => handleAddQuickPreset(500, 120)}
                     className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
                   >
                     + 500 qty (₹120)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAddQuickPreset(1000, 200, 'single')}
+                    onClick={() => handleAddQuickPreset(1000, 200)}
                     className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
                   >
                     + 1000 qty (₹200)
@@ -1838,12 +1571,12 @@ export default function AdminShippingGstPage() {
 
                 {/* Slabs List */}
                 <div className="space-y-2 mt-2">
-                  {prodQuantitySlabs.length === 0 ? (
+                  {batchQuantitySlabs.length === 0 ? (
                     <div className="p-3 bg-white rounded-lg border border-purple-100 text-center text-xs text-purple-700">
                       No custom quantity slabs added yet. Click &ldquo;Add Slab&rdquo; or use quick presets above.
                     </div>
                   ) : (
-                    prodQuantitySlabs.map((slab, idx) => (
+                    batchQuantitySlabs.map((slab, idx) => (
                       <div
                         key={idx}
                         className="flex items-center gap-2.5 bg-white p-2.5 rounded-lg border border-purple-200 text-xs shadow-2xs"
@@ -1861,7 +1594,6 @@ export default function AdminShippingGstPage() {
                                 idx,
                                 'minQty',
                                 parseInt(e.target.value, 10) || 0,
-                                'single',
                               )
                             }
                             className="w-full h-8 px-2.5 font-mono font-bold text-slate-900 border border-slate-200 rounded-md focus:outline-none focus:border-purple-600"
@@ -1880,7 +1612,6 @@ export default function AdminShippingGstPage() {
                                 idx,
                                 'charge',
                                 parseFloat(e.target.value) || 0,
-                                'single',
                               )
                             }
                             className="w-full h-8 px-2.5 font-mono font-bold text-purple-950 border border-slate-200 rounded-md bg-purple-50/50 focus:outline-none focus:border-purple-600"
@@ -1888,7 +1619,7 @@ export default function AdminShippingGstPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => handleRemoveSlab(idx, 'single')}
+                          onClick={() => handleRemoveSlab(idx)}
                           className="p-1.5 text-slate-400 hover:text-red-600 mt-4 rounded-md hover:bg-red-50 transition-colors"
                           title="Remove slab"
                         >
@@ -1901,315 +1632,6 @@ export default function AdminShippingGstPage() {
               </div>
             </div>
           )}
-
-          <div>
-            <label className="text-xs font-semibold text-slate-800 block mb-1">
-              Product Free Shipping Threshold Override (₹)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={prodFreeThreshold}
-              onChange={(e) => setProdFreeThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
-              placeholder="e.g. 1000"
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-            />
-          </div>
-
-          {/* Sync across same category checkbox */}
-          <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={applyToEntireCategory}
-                onChange={(e) => setApplyToEntireCategory(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded text-amber-600 border-amber-300 focus:ring-amber-500"
-              />
-              <div>
-                <span className="text-xs font-bold text-amber-950 block">
-                  Apply to all products in &ldquo;{editingProduct?.categoryName}&rdquo; category
-                </span>
-                <span className="text-[11px] text-amber-800 block">
-                  Automatically copies this courier calculation mode, unit weight, and quantity slabs to all products in this category.
-                </span>
-              </div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setEditingProduct(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={isSavingProductSettings}
-              isLoading={isSavingProductSettings}
-            >
-              <span>{applyToEntireCategory ? 'Apply to Entire Category' : 'Save Product Rules'}</span>
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ============================================================ */}
-      {/* BATCH CATEGORY COURIER MODAL */}
-      {/* ============================================================ */}
-      <Modal
-        isOpen={isBatchCategoryModalOpen}
-        onClose={() => setIsBatchCategoryModalOpen(false)}
-        title={
-          selectedProductIds.length > 0
-            ? `Batch Configure Courier: ${selectedProductIds.length} Selected Products`
-            : `Batch Configure Courier by Category`
-        }
-        maxWidth="md"
-      >
-        <form onSubmit={handleSaveBatchCategoryShipping} className="space-y-4 pt-2">
-          {batchModalError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium rounded-lg flex items-center gap-2">
-              <RiAlertLine className="h-4 w-4 shrink-0 text-rose-600" />
-              <span>{batchModalError}</span>
-            </div>
-          )}
-
-          {/* Target Category Selection */}
-          {selectedProductIds.length === 0 ? (
-            <div>
-              <label className="text-xs font-semibold text-slate-800 block mb-1">
-                Target Category <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={batchTargetCategoryId}
-                onChange={(e) => setBatchTargetCategoryId(e.target.value)}
-                required
-                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
-              >
-                <option value="">-- Choose Category to Configure --</option>
-                {distinctCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Courier mode and quantity slabs will be applied to every product in this category.
-              </p>
-            </div>
-          ) : (
-            <div className="p-3 bg-purple-50 rounded-lg border border-purple-200 text-xs text-purple-900">
-              Applying courier rules directly to <strong>{selectedProductIds.length} selected product(s)</strong> across the catalogue.
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-slate-800 block mb-1">
-                Courier Mode
-              </label>
-              <select
-                value={batchShippingType}
-                onChange={(e) => setBatchShippingType(e.target.value as any)}
-                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-900"
-              >
-                <option value="QUANTITY_BASED">QUANTITY_BASED (Multiple Quantity Slabs)</option>
-                <option value="DEFAULT">DEFAULT (Store Global Policy)</option>
-                <option value="FIXED">FIXED (Flat Rate Per Item)</option>
-                <option value="FREE">FREE (Always Free Delivery)</option>
-                <option value="WEIGHT_BASED">WEIGHT_BASED (Weight-Tier Scaled)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-800 block mb-1">
-                Unit Weight Per Piece (Grams)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={batchUnitWeight}
-                onChange={(e) => setBatchUnitWeight(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                placeholder="e.g. 2.5 for visiting card"
-                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-              />
-            </div>
-          </div>
-
-          {batchShippingType === 'FIXED' && (
-            <div>
-              <label className="text-xs font-semibold text-slate-800 block mb-1">
-                Flat Courier Fee (₹)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={batchCourierCharge}
-                onChange={(e) => setBatchCourierCharge(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                placeholder="e.g. 100"
-                className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
-              />
-            </div>
-          )}
-
-          {batchShippingType === 'QUANTITY_BASED' && (
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-800 block mb-1">
-                  Fallback Surcharge Per Quantity Step (₹)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={batchQtyStepRate}
-                  onChange={(e) => setBatchQtyStepRate(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  placeholder="e.g. 25"
-                  className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-slate-900"
-                />
-              </div>
-
-              {/* Multiple Quantity Slabs (Batch) */}
-              <div className="p-3.5 bg-purple-50/70 rounded-xl border border-purple-200 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
-                      <RiStackLine className="h-4 w-4 text-purple-600" />
-                      <span>Category Quantity Slabs (e.g. 100 qty = ₹50)</span>
-                    </span>
-                    <span className="text-[11px] text-purple-700 block">
-                      These milestones will be assigned to all products in this category.
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleAddSlab('batch')}
-                    className="h-7 text-[11px] px-2 bg-white text-purple-800 border-purple-300 font-bold hover:bg-purple-50"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    <span>Add Slab</span>
-                  </Button>
-                </div>
-
-                {/* Quick Presets */}
-                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                  <span className="text-[10px] font-mono text-purple-700 font-bold uppercase">
-                    Quick Add:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleAddQuickPreset(100, 50, 'batch')}
-                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
-                  >
-                    + 100 qty (₹50)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddQuickPreset(250, 80, 'batch')}
-                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
-                  >
-                    + 250 qty (₹80)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddQuickPreset(500, 120, 'batch')}
-                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
-                  >
-                    + 500 qty (₹120)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAddQuickPreset(1000, 200, 'batch')}
-                    className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white text-purple-900 border border-purple-300 hover:bg-purple-100 transition-colors shadow-2xs"
-                  >
-                    + 1000 qty (₹200)
-                  </button>
-                </div>
-
-                {/* Slabs List */}
-                <div className="space-y-2 mt-2">
-                  {batchQuantitySlabs.map((slab, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2.5 bg-white p-2.5 rounded-lg border border-purple-200 text-xs shadow-2xs"
-                    >
-                      <div className="flex-1">
-                        <span className="text-[10px] text-slate-500 font-medium block mb-1">
-                          Min Qty
-                        </span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={slab.minQty}
-                          onChange={(e) =>
-                            handleUpdateSlab(
-                              idx,
-                              'minQty',
-                              parseInt(e.target.value, 10) || 0,
-                              'batch',
-                            )
-                          }
-                          className="w-full h-8 px-2.5 font-mono font-bold text-slate-900 border border-slate-200 rounded-md focus:outline-none focus:border-purple-600"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <span className="text-[10px] text-slate-500 font-medium block mb-1">
-                          Courier Charge (₹)
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          value={slab.charge}
-                          onChange={(e) =>
-                            handleUpdateSlab(
-                              idx,
-                              'charge',
-                              parseFloat(e.target.value) || 0,
-                              'batch',
-                            )
-                          }
-                          className="w-full h-8 px-2.5 font-mono font-bold text-purple-950 border border-slate-200 rounded-md bg-purple-50/50 focus:outline-none focus:border-purple-600"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveSlab(idx, 'batch')}
-                        className="p-1.5 text-slate-400 hover:text-red-600 mt-4 rounded-md hover:bg-red-50 transition-colors"
-                        title="Remove slab"
-                      >
-                        <RiDeleteBinLine className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="text-xs font-semibold text-slate-800 block mb-1">
-              Free Shipping Threshold Override (₹)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={batchFreeThreshold}
-              onChange={(e) => setBatchFreeThreshold(e.target.value === '' ? '' : parseFloat(e.target.value))}
-              placeholder="e.g. 1000"
-              className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-slate-900"
-            />
-          </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
             <Button

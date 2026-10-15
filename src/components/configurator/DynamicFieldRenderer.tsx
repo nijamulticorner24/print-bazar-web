@@ -36,6 +36,72 @@ export function formatSlotLabel(rawLabel: string): { title: string; placeholder:
   };
 }
 
+export function isPrintingLocationField(field?: { key?: string; label?: string } | null): boolean {
+  if (!field) return false;
+  const k = (field.key || '').toLowerCase();
+  const l = (field.label || '').toLowerCase();
+  return (
+    k === 'printing_location' ||
+    k === 'printinglocation' ||
+    k === 'print_location' ||
+    (l.includes('printing') && l.includes('location')) ||
+    l.includes('printing location') ||
+    l.includes('print location') ||
+    k === 'sides' ||
+    l === 'sides'
+  );
+}
+
+export function isLetUsDesignField(field?: { key?: string; label?: string } | null): boolean {
+  if (!field) return false;
+  const k = (field.key || '').toLowerCase();
+  const l = (field.label || '').toLowerCase();
+  return (
+    k === 'let_us_design' ||
+    k === 'letusdesign' ||
+    l.includes('let us design') ||
+    (l.includes('design') && (l.includes('service') || l.includes('assistance') || l.includes('let')))
+  );
+}
+
+export function isDoubleSideSelection(
+  val: any,
+  opt?: { label?: string; value?: string; fileCount?: number | null }
+): boolean {
+  if (opt?.fileCount === 2) return true;
+  const str = `${val || ''} ${opt?.value || ''} ${opt?.label || ''}`.toLowerCase();
+  return str.includes('double') || str.includes('both') || str.includes('2_sided') || str.includes('two_sided');
+}
+
+export function isDesignServiceYes(
+  val: any,
+  opt?: { label?: string; value?: string }
+): boolean {
+  const str = `${val || ''} ${opt?.value || ''} ${opt?.label || ''}`.toLowerCase();
+  return (
+    str.includes('yes') ||
+    str.includes('yes_please') ||
+    str.includes('please') ||
+    str.includes('studio') ||
+    str.includes('assist')
+  );
+}
+
+export function isDesignServiceNo(
+  val: any,
+  opt?: { label?: string; value?: string; includeImage?: boolean }
+): boolean {
+  if (opt?.includeImage) return true;
+  const str = `${val || ''} ${opt?.value || ''} ${opt?.label || ''}`.toLowerCase();
+  return (
+    str.includes('n0') ||
+    str.includes('no') ||
+    str.includes('self') ||
+    str.includes('upload') ||
+    str.includes('own')
+  );
+}
+
 interface DynamicFieldRendererProps {
   field: DynamicField;
   value: any;
@@ -50,6 +116,8 @@ interface DynamicFieldRendererProps {
   slotErrors?: Record<string, string>;
   designNotes?: string;
   onDesignNotesChange?: (notes: string) => void;
+  allFieldValues?: Record<string, any>;
+  allFields?: DynamicField[];
 }
 
 export function DynamicFieldRenderer({
@@ -66,11 +134,109 @@ export function DynamicFieldRenderer({
   slotErrors = {},
   designNotes,
   onDesignNotesChange,
+  allFieldValues,
+  allFields,
 }: DynamicFieldRendererProps) {
   const { type, label, description, placeholder, isRequired, options, validationRules } = field;
 
   // Selected option resolution
   const selectedOption = options?.find((opt) => String(opt.value) === String(value));
+
+  // Check special attributes connection (Printing Location & Let us design)
+  const isPrintingField = isPrintingLocationField(field);
+  const isDesignField = isLetUsDesignField(field);
+
+  // Sibling field discovery
+  const printingLocField = allFields?.find(isPrintingLocationField);
+  const designField = allFields?.find(isLetUsDesignField);
+
+  // Printing location resolution
+  const currentPrintingLocValue = printingLocField ? allFieldValues?.[printingLocField.key] : isPrintingField ? value : undefined;
+  const currentPrintingLocOpt = printingLocField?.options?.find(
+    (o) => String(o.value) === String(currentPrintingLocValue)
+  ) || (isPrintingField ? selectedOption : undefined);
+
+  const isDoubleSide = isDoubleSideSelection(currentPrintingLocValue, currentPrintingLocOpt);
+
+  // Check if design field is yes/no
+  const currentDesignValue = designField ? allFieldValues?.[designField.key] : isDesignField ? value : undefined;
+  const currentDesignOpt = designField?.options?.find(
+    (o) => String(o.value) === String(currentDesignValue)
+  ) || (isDesignField ? selectedOption : undefined);
+
+  const isDesignYes = isDesignServiceYes(currentDesignValue, currentDesignOpt);
+  const isDesignNo = isDesignServiceNo(currentDesignValue, currentDesignOpt);
+
+  // Determine if this field should render upload slots
+  let shouldRenderSlots = false;
+  let effectiveSlots: { slotKey: string; label: string }[] = [];
+
+  if (designField) {
+    // Both Printing Location & Let us design exist on this product
+    if (isPrintingField) {
+      // Printing location itself yields its upload slots to Let us design
+      shouldRenderSlots = false;
+    } else if (isDesignField) {
+      if (isDesignNo) {
+        shouldRenderSlots = true;
+        if (isDoubleSide) {
+          effectiveSlots = [
+            { slotKey: 'front', label: 'front' },
+            { slotKey: 'back', label: 'back' },
+          ];
+        } else {
+          effectiveSlots = [
+            { slotKey: 'front', label: 'front' },
+          ];
+        }
+      } else {
+        shouldRenderSlots = false;
+      }
+    } else {
+      // Other arbitrary fields with custom slots
+      if ((selectedOption?.fileCount && selectedOption.fileCount > 0) || selectedOption?.includeImage) {
+        shouldRenderSlots = true;
+        const count = selectedOption.fileCount || 1;
+        effectiveSlots = Array.from({ length: count }, (_, slotIdx) => {
+          const raw = selectedOption.fileSlotLabels?.[slotIdx] || (count === 1 ? 'artwork' : slotIdx === 0 ? 'front' : 'back');
+          return { slotKey: raw.toLowerCase().trim(), label: raw };
+        });
+      }
+    }
+  } else {
+    // No Let us design field on this product
+    if (isPrintingField) {
+      if (isDoubleSide) {
+        shouldRenderSlots = true;
+        effectiveSlots = [
+          { slotKey: 'front', label: 'front' },
+          { slotKey: 'back', label: 'back' },
+        ];
+      } else {
+        shouldRenderSlots = true;
+        effectiveSlots = [
+          { slotKey: 'front', label: 'front' },
+        ];
+      }
+    } else if ((selectedOption?.fileCount && selectedOption.fileCount > 0) || selectedOption?.includeImage) {
+      shouldRenderSlots = true;
+      const count = selectedOption.fileCount || 1;
+      effectiveSlots = Array.from({ length: count }, (_, slotIdx) => {
+        const raw = selectedOption.fileSlotLabels?.[slotIdx] || (count === 1 ? 'artwork' : slotIdx === 0 ? 'front' : 'back');
+        return { slotKey: raw.toLowerCase().trim(), label: raw };
+      });
+    }
+  }
+
+  // Determine if Design Assistance card should show
+  const shouldRenderDesignAssistance =
+    !shouldRenderSlots &&
+    ((isDesignField && isDesignYes) ||
+      (!isDesignField &&
+        !designField &&
+        !selectedOption?.fileCount &&
+        !selectedOption?.includeImage &&
+        (selectedOption?.value === 'yes_please' || field.key === 'l' || field.label.toLowerCase().includes('design'))));
 
   // Option price modifier badge
   const renderPriceBadge = (opt: DynamicFieldOption, isSelected: boolean) => {
@@ -212,14 +378,12 @@ export function DynamicFieldRenderer({
                 {/* ------------------------------------------------------------- */}
                 {/* DYNAMIC UPLOAD SLOTS SECTION (Admin Configured File Slots)    */}
                 {/* ------------------------------------------------------------- */}
-                {selectedOption?.fileCount && selectedOption.fileCount > 0 ? (
+                {shouldRenderSlots && effectiveSlots.length > 0 ? (
                   <div className="rounded-2xl border border-purple-200 bg-white p-4 sm:p-5 mt-3.5 space-y-4 shadow-xs animate-in fade-in duration-200">
-                    {Array.from({ length: selectedOption.fileCount }).map((_, slotIdx) => {
-                      const rawSlotLabel =
-                        selectedOption.fileSlotLabels?.[slotIdx] ||
-                        (selectedOption.fileCount === 1 ? 'artwork' : slotIdx === 0 ? 'front' : 'back');
+                    {effectiveSlots.map((slot, slotIdx) => {
+                      const rawSlotLabel = slot.label;
                       const { title, placeholder } = formatSlotLabel(rawSlotLabel);
-                      const slotKey = rawSlotLabel.toLowerCase().trim();
+                      const slotKey = slot.slotKey;
                       const uploadedFile = slotFiles?.[slotKey];
                       const isUploading = Boolean(uploadingSlots?.[slotKey]);
                       const errorMsg = slotErrors?.[slotKey];
@@ -289,10 +453,10 @@ export function DynamicFieldRenderer({
                                     {placeholder}
                                   </div>
                                   <div className="text-[11px] font-bold text-purple-700 bg-purple-100/70 inline-block px-2.5 py-0.5 rounded-full mt-1.5 font-mono">
-                                    Min {selectedOption.minMegapixels || 1.5} MP Quality • Max Not Limited
+                                    Min {selectedOption?.minMegapixels || 1.5} MP Quality • Max Not Limited
                                   </div>
                                   <div className="text-[11px] text-slate-400 mt-1 font-sans">
-                                    PNG, JPG, WEBP, PDF (Upload must match min {selectedOption.minMegapixels || 1.5} MP)
+                                    PNG, JPG, WEBP, PDF (Upload must match min {selectedOption?.minMegapixels || 1.5} MP)
                                   </div>
                                 </>
                               )}
@@ -320,7 +484,7 @@ export function DynamicFieldRenderer({
                                     <span>{(uploadedFile.fileSize / (1024 * 1024)).toFixed(1)} MB</span>
                                     {uploadedFile.actualMegapixels ? (
                                       <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                        ✓ {uploadedFile.actualMegapixels} MP (Verified ≥ {selectedOption.minMegapixels || 1.5} MP)
+                                        ✓ {uploadedFile.actualMegapixels} MP (Verified ≥ {selectedOption?.minMegapixels || 1.5} MP)
                                       </span>
                                     ) : null}
                                   </div>
@@ -357,44 +521,39 @@ export function DynamicFieldRenderer({
                       );
                     })}
                   </div>
-                ) : (
+                ) : shouldRenderDesignAssistance ? (
                   /* ------------------------------------------------------------- */
                   /* DESIGN ASSISTANCE CARD (When Yes Please / Design Option chosen)*/
                   /* ------------------------------------------------------------- */
-                  (!selectedOption?.fileCount &&
-                    (selectedOption?.value === 'yes_please' ||
-                      field.key === 'l' ||
-                      field.label.toLowerCase().includes('design')) && (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 mt-3 space-y-2.5 animate-in fade-in duration-200">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-xl bg-slate-900 text-[#FFED00] flex items-center justify-center flex-shrink-0 shadow-2xs">
-                            <RiPaletteLine className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <span className="text-xs font-bold text-slate-900 block">
-                              Professional Design Assistance Selected
-                            </span>
-                            <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
-                              Our prepress creative studio will design and format your print-ready artwork according to your branding requirements.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="pt-1">
-                          <label className="block text-[11px] font-bold text-slate-800 mb-1">
-                            Design Notes & Branding Details (Optional)
-                          </label>
-                          <textarea
-                            value={designNotes || ''}
-                            onChange={(e) => onDesignNotesChange?.(e.target.value)}
-                            placeholder="Enter your logo placement, contact details, text copy, color preferences, or reference notes..."
-                            rows={2}
-                            className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 font-sans shadow-2xs"
-                          />
-                        </div>
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 mt-3 space-y-2.5 animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-8 w-8 rounded-xl bg-slate-900 text-[#FFED00] flex items-center justify-center flex-shrink-0 shadow-2xs">
+                        <RiPaletteLine className="h-4 w-4" />
                       </div>
-                    ))
-                )}
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          Professional Design Assistance Selected
+                        </span>
+                        <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                          Our prepress creative studio will design and format your print-ready artwork according to your branding requirements.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-1">
+                      <label className="block text-[11px] font-bold text-slate-800 mb-1">
+                        Design Notes & Branding Details (Optional)
+                      </label>
+                      <textarea
+                        value={designNotes || ''}
+                        onChange={(e) => onDesignNotesChange?.(e.target.value)}
+                        placeholder="Enter your logo placement, contact details, text copy, color preferences, or reference notes..."
+                        rows={2}
+                        className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 font-sans shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-400 italic font-mono border border-slate-200">

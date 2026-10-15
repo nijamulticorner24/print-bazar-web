@@ -130,6 +130,7 @@ export interface DynamicFieldOption {
   isDefault: boolean;
   isActive: boolean;
   imageUrl?: string | null;
+  includeImage?: boolean;
   fileCount?: number | null;
   fileSlotLabels?: string[];
   minMegapixels?: number | null;
@@ -143,6 +144,7 @@ export interface ReusableAttributeOption {
   isDefault?: boolean;
   isActive?: boolean;
   imageUrl?: string | null;
+  includeImage?: boolean;
   fileCount?: number | null;
   fileSlotLabels?: string[];
   minMegapixels?: number | null;

@@ -7,7 +7,14 @@ import {
   resolveImageUrl,
   ProductOptionRequirement,
 } from '@/lib/api';
-import { DynamicFieldRenderer } from './DynamicFieldRenderer';
+import {
+  DynamicFieldRenderer,
+  isPrintingLocationField,
+  isLetUsDesignField,
+  isDoubleSideSelection,
+  isDesignServiceYes,
+  isDesignServiceNo,
+} from './DynamicFieldRenderer';
 import { formatCurrency, getEstimatedDeliveryText } from '@/lib/utils';
 import {
   RiUploadCloud2Line,
@@ -314,11 +321,70 @@ export function ProductConfigurationFlow({
   // Dynamically resolve active upload slots from selected attribute options
   const activeSlotConfigs = useMemo(() => {
     const slots: { slotKey: string; label: string; fieldKey: string; minMegapixels: number }[] = [];
+
+    const designField = visibleFields.find(isLetUsDesignField);
+    const printingLocField = visibleFields.find(isPrintingLocationField);
+
+    // If product has "Let us design" attribute
+    if (designField) {
+      const designVal = fieldValues[designField.key];
+      const designOpt = designField.options?.find((o) => String(o.value) === String(designVal));
+
+      // If user selected "Yes Please" / design service -> NO artwork upload slots needed!
+      if (designVal && isDesignServiceYes(designVal, designOpt)) {
+        return [];
+      }
+
+      // If user selected "No" / "N0" -> they provide artwork files
+      if (designVal && isDesignServiceNo(designVal, designOpt)) {
+        let isDouble = false;
+        if (printingLocField) {
+          const locVal = fieldValues[printingLocField.key];
+          const locOpt = printingLocField.options?.find((o) => String(o.value) === String(locVal));
+          isDouble = isDoubleSideSelection(locVal, locOpt);
+        }
+
+        if (isDouble) {
+          slots.push(
+            { slotKey: 'front', label: 'Front Side Artwork', fieldKey: designField.key, minMegapixels: 1.5 },
+            { slotKey: 'back', label: 'Back Side Artwork', fieldKey: designField.key, minMegapixels: 1.5 }
+          );
+        } else {
+          slots.push(
+            { slotKey: 'front', label: 'Front Side Artwork', fieldKey: designField.key, minMegapixels: 1.5 }
+          );
+        }
+        return slots;
+      }
+    }
+
+    // Default resolution for fields when "Let us design" is not present, or for other custom fields
     for (const field of visibleFields) {
+      if (designField && (isPrintingLocationField(field) || isLetUsDesignField(field))) {
+        continue;
+      }
+
+      if (isPrintingLocationField(field)) {
+        const selectedOptValue = fieldValues[field.key];
+        const opt = field.options?.find((o) => String(o.value) === String(selectedOptValue));
+        const isDouble = isDoubleSideSelection(selectedOptValue, opt);
+        if (isDouble) {
+          slots.push(
+            { slotKey: 'front', label: 'Front Side Artwork', fieldKey: field.key, minMegapixels: 1.5 },
+            { slotKey: 'back', label: 'Back Side Artwork', fieldKey: field.key, minMegapixels: 1.5 }
+          );
+        } else {
+          slots.push(
+            { slotKey: 'front', label: 'Front Side Artwork', fieldKey: field.key, minMegapixels: 1.5 }
+          );
+        }
+        continue;
+      }
+
       const selectedOptValue = fieldValues[field.key];
       const opt = field.options?.find((o) => String(o.value) === String(selectedOptValue));
-      if (opt && opt.fileCount && opt.fileCount > 0) {
-        const count = opt.fileCount;
+      if (opt && ((opt.fileCount && opt.fileCount > 0) || opt.includeImage)) {
+        const count = opt.fileCount || 1;
         const requiredMinMP = opt.minMegapixels ? Number(opt.minMegapixels) : 1.5;
         const rawLabels =
           opt.fileSlotLabels && opt.fileSlotLabels.length > 0
@@ -463,6 +529,13 @@ export function ProductConfigurationFlow({
 
   const effectiveHasDesignService = useMemo(() => {
     if (designReq === 'REQUIRED') return true;
+    const designField = visibleFields.find(isLetUsDesignField);
+    if (designField) {
+      const val = fieldValues[designField.key];
+      const opt = designField.options?.find((o) => String(o.value) === String(val));
+      if (val && isDesignServiceYes(val, opt)) return true;
+      if (val && isDesignServiceNo(val, opt)) return false;
+    }
     // Check if user selected an option requesting design assistance (e.g. Yes Please, or fileCount === 0 with design keywords)
     const hasSelectedDesignOption = visibleFields.some((f) => {
       const val = String(fieldValues[f.key] || '').toLowerCase();
@@ -1159,6 +1232,8 @@ export function ProductConfigurationFlow({
                   slotErrors={slotErrors}
                   designNotes={designNotes}
                   onDesignNotesChange={setDesignNotes}
+                  allFieldValues={fieldValues}
+                  allFields={visibleFields}
                 />
               </div>
             ))}

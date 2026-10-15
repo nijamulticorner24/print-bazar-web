@@ -452,6 +452,19 @@ export default function AdminProductsPage() {
     }
   };
 
+  const handleToggleAttributeAddOn = (attrId: string, val: boolean) => {
+    setSelectedAttributes((prev) => {
+      if (!prev[attrId]) return prev;
+      return {
+        ...prev,
+        [attrId]: {
+          ...prev[attrId],
+          isOptionalAddOn: val,
+        },
+      };
+    });
+  };
+
   const handleToggleOptionValue = (attrId: string, value: string) => {
     const current = selectedAttributes[attrId];
     if (!current) return;
@@ -1081,6 +1094,12 @@ export default function AdminProductsPage() {
         const sharedAttr = attributeLibrary.find((a) => a.id === attrId);
         if (!sharedAttr) continue;
 
+        const isAddOn = Boolean(
+          config.isOptionalAddOn !== undefined
+            ? config.isOptionalAddOn
+            : (sharedAttr.isOptionalAddOn || sharedAttr.options?.[0]?.isOptionalAddOn)
+        );
+
         const optionsForField = (sharedAttr.options || [])
           .filter((opt) => config.enabledOptionValues.includes(opt.value))
           .map((opt, oIdx) => ({
@@ -1090,6 +1109,7 @@ export default function AdminProductsPage() {
             priceModifier: 0,
             isDefault: oIdx === 0,
             sortOrder: oIdx,
+            isOptionalAddOn: isAddOn,
           }));
 
         if (optionsForField.length === 0) continue;
@@ -1261,6 +1281,15 @@ export default function AdminProductsPage() {
                 );
                 let totalExtra = 0;
                 for (const attr of tier.attributes) {
+                  const aConfig = Object.values(selectedAttributes).find((a) => a.code === attr.attributeCode);
+                  const aLib = attributeLibrary.find((a) => a.code === attr.attributeCode || a.id === aConfig?.attributeId);
+                  const isAddOn = Boolean(
+                    aConfig?.isOptionalAddOn !== undefined
+                      ? aConfig.isOptionalAddOn
+                      : (aLib?.isOptionalAddOn || aLib?.options?.[0]?.isOptionalAddOn)
+                  );
+                  if (!isAddOn) continue;
+
                   const uniqueKey = `${attr.attributeCode}:${attr.attributeValue}`;
                   const extraPrice = Number(
                     attr.extraPrices?.[r.min] !== undefined && attr.extraPrices?.[r.min] !== ''
@@ -1343,6 +1372,15 @@ export default function AdminProductsPage() {
                 const basePrice = Number(tier.basePrices[q]) || 0;
                 let totalExtra = 0;
                 for (const attr of tier.attributes) {
+                  const aConfig = Object.values(selectedAttributes).find((a) => a.code === attr.attributeCode);
+                  const aLib = attributeLibrary.find((a) => a.code === attr.attributeCode || a.id === aConfig?.attributeId);
+                  const isAddOn = Boolean(
+                    aConfig?.isOptionalAddOn !== undefined
+                      ? aConfig.isOptionalAddOn
+                      : (aLib?.isOptionalAddOn || aLib?.options?.[0]?.isOptionalAddOn)
+                  );
+                  if (!isAddOn) continue;
+
                   totalExtra += Number(attr.extraPrices?.[q]) || 0;
                 }
                 const totalPrice = basePrice + totalExtra;
@@ -1970,13 +2008,28 @@ export default function AdminProductsPage() {
                     >
                       {/* Attribute Header */}
                       <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-slate-900 text-xs">
                             {config.name}
                           </span>
                           <span className="text-[11px] text-slate-500 font-medium">
                             ({enabledCount} of {allOptions.length} values selected)
                           </span>
+                          <label className="inline-flex items-center gap-1.5 ml-2 cursor-pointer select-none px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(config.isOptionalAddOn)}
+                              onChange={(e) => handleToggleAttributeAddOn(attrId, e.target.checked)}
+                              className="w-3.5 h-3.5 accent-indigo-600 rounded"
+                            />
+                            <span
+                              className={`text-[10px] font-mono font-bold ${
+                                config.isOptionalAddOn ? 'text-indigo-700' : 'text-slate-500'
+                              }`}
+                            >
+                              {config.isOptionalAddOn ? 'Optional Add-on (Extra Price ON)' : 'Standard (No Extra Price)'}
+                            </span>
+                          </label>
                         </div>
 
                         <div className="flex items-center gap-3">
@@ -2441,13 +2494,27 @@ export default function AdminProductsPage() {
                                 </span>
                               </div>
 
-                              {/* 2. Extra Price for each Attribute in this combination */}
+                              {/* 2. Extra Price for each Attribute in this combination - ONLY FOR OPTIONAL ADD-ONS */}
                               {tier.attributes.map((attrRule) => {
                                 const currentAttrConfig = Object.values(selectedAttributes).find(
                                   (a) => a.code === attrRule.attributeCode,
                                 );
+                                const libAttr = attributeLibrary.find(
+                                  (a) => a.code === attrRule.attributeCode || a.id === currentAttrConfig?.attributeId,
+                                );
+                                const isAddOn = Boolean(
+                                  currentAttrConfig?.isOptionalAddOn !== undefined
+                                    ? currentAttrConfig.isOptionalAddOn
+                                    : (libAttr?.isOptionalAddOn || libAttr?.options?.[0]?.isOptionalAddOn)
+                                );
+
+                                // If unchecked / not an optional add-on, DO NOT show the extra price option!
+                                if (!isAddOn) {
+                                  return null;
+                                }
+
                                 const attrDisplayName =
-                                  currentAttrConfig?.name || attrRule.attributeCode || 'Attribute';
+                                  currentAttrConfig?.name || libAttr?.name || attrRule.attributeCode || 'Attribute';
                                 const optLabel = attrRule.attributeValue
                                   ? getOptionLabel(attrRule.attributeCode, attrRule.attributeValue)
                                   : '';
@@ -2485,6 +2552,19 @@ export default function AdminProductsPage() {
                               {/* 3. Total Price for this Quantity at the end of the combination */}
                               {(() => {
                                 const totalExtraForQty = tier.attributes.reduce((sum, a) => {
+                                  const aConfig = Object.values(selectedAttributes).find(
+                                    (cfg) => cfg.code === a.attributeCode,
+                                  );
+                                  const aLib = attributeLibrary.find(
+                                    (lib) => lib.code === a.attributeCode || lib.id === aConfig?.attributeId,
+                                  );
+                                  const isAddOn = Boolean(
+                                    aConfig?.isOptionalAddOn !== undefined
+                                      ? aConfig.isOptionalAddOn
+                                      : (aLib?.isOptionalAddOn || aLib?.options?.[0]?.isOptionalAddOn)
+                                  );
+                                  if (!isAddOn) return sum;
+
                                   const v = Number(a.extraPrices?.[qty] || 0);
                                   return sum + (isNaN(v) ? 0 : v);
                                 }, 0);
